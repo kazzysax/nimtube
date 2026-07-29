@@ -1,0 +1,23 @@
+{
+  "name": "nimtube",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "postinstall": "node scripts/vendor-sdk.mjs",
+    "test": "node test/math.test.mjs && node test/terminal.test.mjs && node test/auth.test.mjs && node test/tips.test.mjs && node test/wallet.test.mjs && node test/e2e.test.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@nimiq/core": "^2.7.2",
+    "@nimiq/mini-app-sdk": "^0.1.0",
+    "express": "^5.2.1"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=22.5.0"
+  }
+}

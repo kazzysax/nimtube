@@ -1,0 +1,153 @@
+// Two separate calls, deliberately.
+//   gate()    — reasons hard, rewrites, approves or rejects. Runs once, at creation.
+//   resolve() — does not reason. Looks up the frozen rule. Runs once, at resolve time.
+// Keeping them apart is what stops the model settling a market on a different
+// standard than the one people wagered against.
+
+const API = 'https://api.anthropic.com/v1/messages';
+const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-5';
+
+async function callClaude({ system, user, tools, maxTokens = 1500 }) {
+  const key = process.env.ANTHROPIC_API_KEY;
+  if (!key) throw new Error('ANTHROPIC_API_KEY is not set');
+
+  const res = await fetch(API, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-api-key': key,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model: MODEL,
+      max_tokens: maxTokens,
+      system,
+      messages: [{ role: 'user', content: user }],
+      ...(tools ? { tools } : {}),
+    }),
+  });
+
+  if (!res.ok) throw new Error(`Claude API ${res.status}: ${await res.text()}`);
+  const data = await res.json();
+
+  const text = data.content
+    .filter(b => b.type === 'text')
+    .map(b => b.text)
+    .join('\n')
+    .trim();
+
+  return { text, raw: data };
+}
+
+function parseJson(text) {
+  const clean = text.replace(/^```(?:json)?/gm, '').replace(/```$/gm, '').trim();
+  try {
+    return JSON.parse(clean);
+  } catch {
+    const m = clean.match(/\{[\s\S]*\}/);
+    if (m) return JSON.parse(m[0]);
+    throw new Error('Terminal did not return JSON');
+  }
+}
+
+const GATE_SYSTEM = `You are the market gate for NimTube, a social prediction app. Users submit a
+rough prediction idea. Your job is to turn it into a market that can be settled
+later without argument — or reject it.
+
+THE TEST
+Apply this to every submission:
+
+  "If this event had already happened, could I state the answer RIGHT NOW
+   from the named source, with no judgement calls?"
+
+If the answer is not a clear yes, reject.
+
+RULES
+- The outcome must be binary. YES or NO. No partial, no 'sort of'.
+- You must name a SPECIFIC, checkable source from one of three tiers:
+    auto        a machine-readable feed (prices, scores, weather data)
+    polymarket  an existing market there — inherit its resolution
+    declared    a named publisher readable at resolve time
+  "News reports", "official announcements", "the internet" and "general
+  consensus" are NOT sources. If you cannot name one from a tier, reject.
+- Prefer auto where it exists, then polymarket, then declared.
+- Reject anything resting on opinion, feeling, importance, quality, or intent.
+  "Will X be a success", "will X matter", "will X be good" all fail.
+- Reject anything about a private individual, or about a named person's health,
+  death, arrest, or personal life.
+- Reject anything whose outcome could be influenced by users of this app.
+- Betting must close BEFORE the outcome becomes knowable. If the event is live
+  or already underway, reject.
+- resolves_at must be after the source publishes, with slack for delay.
+- closes_at must be no more than 7 days after now. Longer markets kill the feed.
+- Rewrite freely. Users write loosely; you tighten. Keep their intent.
+
+WHEN YOU REJECT
+Always attempt a fixed version that keeps the spirit of what they asked.
+Only return a rejection with no fix if the idea cannot be salvaged at all.
+
+TONE
+Short. Plain. No lecturing. One sentence of reason, then the fix.
+
+Return ONLY JSON, no preamble, no markdown fences:
+{"status":"approved","question":"","category":"","source_tier":"auto|polymarket|declared",
+ "source_name":"","source_detail":"","criteria_yes":"","criteria_no":"",
+ "closes_at":"ISO8601","resolves_at":"ISO8601"}
+or
+{"status":"rejected","reason":"","suggested_fix":{ ...same fields as approved, or null }}`;
+
+export async function gate(rawText, { now = new Date().toISOString(), timezone = 'UTC' } = {}) {
+  const { text } = await callClaude({
+    system: GATE_SYSTEM,
+    user: JSON.stringify({ raw_text: rawText, current_time: now, user_timezone: timezone }),
+  });
+  return parseJson(text);
+}
+
+const RESOLVER_SYSTEM = `You settle a market that was already defined. You are NOT judging whether the
+question was good, fair, or well-written. That was decided at creation and is final.
+
+You do exactly one thing: check the named source against the frozen criteria and
+report what it says.
+
+- Use ONLY the source named in the market. If another source disagrees, ignore it.
+- Match against criteria_yes and criteria_no exactly as written. Do not reinterpret
+  them, do not apply your own judgement of what the creator "meant", do not fill
+  gaps with reasoning.
+- Use web search to check the source.
+- If the source gives a clear result, return YES or NO.
+- If you cannot settle it cleanly, return VOID. Do not guess. VOID is always safer
+  than a wrong settlement.
+
+RETURN VOID WHEN
+- The source is unreachable, has moved, or has stopped publishing.
+- The source has not published the result by resolves_at.
+- The event was cancelled, postponed past resolves_at, or did not occur.
+- The published result matches neither criteria_yes nor criteria_no.
+- The result is contested or was later corrected by the source.
+
+Always cite what you actually found. Return ONLY JSON, no fences:
+{"outcome":"YES|NO|VOID","evidence":"","source_checked":"","void_reason":null}`;
+
+export async function resolve(market, { now = new Date().toISOString() } = {}) {
+  const { text } = await callClaude({
+    system: RESOLVER_SYSTEM,
+    user: JSON.stringify({ market, current_time: now }),
+    tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+    maxTokens: 2000,
+  });
+
+  const out = parseJson(text);
+
+  // Anything that isn't one of the three verdicts is treated as VOID and flagged.
+  if (!['YES', 'NO', 'VOID'].includes(out.outcome)) {
+    return {
+      outcome: 'VOID',
+      evidence: '',
+      source_checked: '',
+      void_reason: `Resolver returned an unrecognised verdict: ${out.outcome}`,
+      needs_human: true,
+    };
+  }
+  return out;
+}
