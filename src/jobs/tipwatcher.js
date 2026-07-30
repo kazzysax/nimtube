@@ -12,7 +12,7 @@ const TICK_MS = Number(process.env.TIPWATCHER_TICK_MS || 45_000);
 const MIN_CONFIRMATIONS = Number(process.env.TIP_MIN_CONFIRMATIONS || 10);
 const MAX_ATTEMPTS = Number(process.env.TIP_MAX_ATTEMPTS || 40);
 
-export const tipMarker = marketId => `nimtube tip m${marketId}`;
+export const tipMarker = marketId => `predtube tip m${marketId}`;
 
 /** Every reason a tip can fail. Ordered so the most diagnostic wins. */
 export function checkTransaction(tx, tip, { minConfirmations = MIN_CONFIRMATIONS } = {}) {

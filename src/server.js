@@ -221,7 +221,7 @@ app.post('/api/admin/tick', wrap(async (req, res) => {
 const PORT = process.env.PORT || 3000;
 if (process.env.NODE_ENV !== 'test') {
   app.listen(PORT, () => {
-    console.log(`NimTube on :${PORT}`);
+    console.log(`PredTube on :${PORT}`);
     if (process.env.ANTHROPIC_API_KEY) resolverJob.start();
     else console.warn('[warn] ANTHROPIC_API_KEY unset — resolver idle, market creation will fail');
     if (process.env.NIMIQ_RPC_URL) tipJob.start();

@@ -9,7 +9,7 @@ globalThis.localStorage = {
   getItem: k => store.get(k) ?? null,
   setItem: (k, v) => store.set(k, String(v)),
 };
-globalThis.location = { origin: 'https://nimtube.app' };
+globalThis.location = { origin: 'https://predtube.app' };
 globalThis.window = {};
 
 // --- no provider: dev fallback ---
@@ -18,15 +18,15 @@ let s = await w.connect();
 is(s.inNimiqPay === false, 'no provider: falls back to dev mode instead of crashing');
 is(/^NQDEV/.test(s.address), 'no provider: mints a dev address');
 const first = s.address;
-store.clear(); store.set('nimtube.devAddress', first);
+store.clear(); store.set('predtube.devAddress', first);
 s = await w.connect();
 is(s.address === first, 'no provider: dev address is stable across reloads');
 
 try { await w.sendNim('NQ1 X', 1); is(false, 'dev mode should refuse to send NIM'); }
 catch (e) { is(/Nimiq Pay app/.test(e.message), 'dev mode: refuses to fake a payment'); }
 
-is(w.deeplink('https://nimtube.app') === 'nimiqpay://miniapp?url=nimtube.app',
-   'deeplink: strips the scheme as the docs require');
+is(w.deeplink('https://predtube.app') === 'nimiqpay://miniapp?url=predtube.app/app',
+   'deeplink: strips the scheme and points at the mini-app entry, as the docs require');
 
 // --- provider present: real path ---
 globalThis.window = { nimiqPay: { language: 'de' } };

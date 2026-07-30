@@ -4,7 +4,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'fs';
 import { dirname } from 'path';
 
-const FILE = process.env.DB_FILE || './data/nimtube.db';
+const FILE = process.env.DB_FILE || './data/predtube.db';
 mkdirSync(dirname(FILE), { recursive: true });
 
 export const db = new DatabaseSync(FILE);

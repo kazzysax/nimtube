@@ -50,7 +50,7 @@ function parseJson(text) {
   }
 }
 
-const GATE_SYSTEM = `You are the market gate for NimTube, a social prediction app. Users submit a
+const GATE_SYSTEM = `You are the market gate for PredTube, a social prediction app. Users submit a
 rough prediction idea. Your job is to turn it into a market that can be settled
 later without argument — or reject it.
 

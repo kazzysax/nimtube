@@ -4,7 +4,7 @@ const CATEGORIES = ['Crypto', 'Football', 'Politics', 'Music', 'Weather', 'AI'];
 const STAKES = [1, 3, 5, 10, 20];
 
 const S = {
-  token: localStorage.getItem('nimtube.token'),
+  token: localStorage.getItem('predtube.token'),
   me: null,
   step: 0,
   username: '',
@@ -42,9 +42,9 @@ function screenWelcome() {
     <div class="glow"></div><div class="pad">
       ${dots(0)}
       <div class="mid">
-        <p class="brand">Nim<span>Tube</span></p>
+        <p class="brand">Pred<span>Tube</span></p>
         <p class="sub">Take a side. Live with it.</p>
-        <p class="sub2">Staked · Public · Permanent</p>
+        <p class="sub2">Social · Public · Reputation</p>
       </div>
       <div class="foot">
         <button class="cta" data-go="1">Get started</button>
@@ -200,7 +200,7 @@ function screenFeed() {
   return h`
     <div class="glow"></div>
     <div class="top">
-      <span class="logo">Nim<span>Tube</span></span>
+      <span class="logo">Pred<span>Tube</span></span>
       <span class="pts">${S.me?.points ?? 0} PTS</span>
     </div>
     <div class="chips">
@@ -319,7 +319,7 @@ function bind() {
   on('#finish, #finish2', 'click', async () => {
     try {
       const r = await signIn({ username: S.username });
-      S.token = r.token; localStorage.setItem('nimtube.token', r.token);
+      S.token = r.token; localStorage.setItem('predtube.token', r.token);
       S.me = r.user; render();
     } catch (err) { alert(err.message); }
   });
@@ -371,7 +371,7 @@ function bind() {
 
       // The marker is what lets the server match this payment to this market on
       // chain, so it has to go out with the transaction, not after it.
-      const hash = await wallet.sendNim(profile.address, 0.5, `nimtube tip m${mid}`);
+      const hash = await wallet.sendNim(profile.address, 0.5, `predtube tip m${mid}`);
       await api(`/markets/${mid}/tip`, { method: 'POST', body: { toUsername: to, amountNim: 0.5, txHash: hash } });
 
       // Not "tipped" — it isn't real until the chain confirms it.
@@ -386,7 +386,7 @@ function bind() {
   on('[data-share]', 'click', e => {
     const id = e.currentTarget.dataset.share;
     const url = `${location.origin}/?m=${id}`;
-    if (navigator.share) navigator.share({ url, title: 'NimTube' }).catch(() => {});
+    if (navigator.share) navigator.share({ url, title: 'PredTube' }).catch(() => {});
     else { navigator.clipboard?.writeText(url); e.currentTarget.textContent = 'Copied'; }
   });
 }
@@ -414,7 +414,7 @@ async function signIn({ username } = {}) {
   if (S.token) {
     try {
       S.me = await api('/me');
-    } catch { S.token = null; localStorage.removeItem('nimtube.token'); }
+    } catch { S.token = null; localStorage.removeItem('predtube.token'); }
   }
 
   if (!S.me && wallet.state.address) {
@@ -422,7 +422,7 @@ async function signIn({ username } = {}) {
     try {
       const r = await signIn();
       if (!r.needsUsername) {
-        S.token = r.token; localStorage.setItem('nimtube.token', r.token); S.me = r.user;
+        S.token = r.token; localStorage.setItem('predtube.token', r.token); S.me = r.user;
       }
     } catch { /* first run, walk the steps */ }
   }

@@ -19,7 +19,7 @@ export function issueChallenge(address) {
   const nonce = crypto.randomBytes(24).toString('hex');
   db.prepare('INSERT INTO challenges (nonce, address) VALUES (?, ?)').run(nonce, address || null);
   db.prepare("DELETE FROM challenges WHERE created_at < datetime('now', '-1 hour')").run();
-  return { nonce, message: `NimTube login: ${nonce}` };
+  return { nonce, message: `PredTube login: ${nonce}` };
 }
 
 /** Nimiq's convention for signed messages prefixes and hashes the payload before
@@ -32,7 +32,7 @@ function prefixedDigest(message) {
 }
 
 export function verifyChallenge({ address, publicKey, signature, message }) {
-  const m = /NimTube login: ([0-9a-f]{48})/.exec(message || '');
+  const m = /PredTube login: ([0-9a-f]{48})/.exec(message || '');
   if (!m) throw Object.assign(new Error('Malformed challenge'), { status: 400 });
   const nonce = m[1];
 

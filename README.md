@@ -1,4 +1,4 @@
-# NimTube
+# PredTube
 
 A social prediction app that runs as a Nimiq Pay mini app. Posts are the markets.
 You stake points to take a side, and reputation is handed out by how surprising the
@@ -113,7 +113,7 @@ The client reports a transaction hash. Nothing else it says is trusted.
 `src/jobs/tipwatcher.js` polls a Nimiq node via `getTransactionByHash` and only
 marks a tip verified once **all** of these hold: enough confirmations, the sender is
 the tipper, the recipient is the person being tipped, the transaction carries the
-marker `nimtube tip m<marketId>` in its data, and it did not fail on chain.
+marker `predtube tip m<marketId>` in its data, and it did not fail on chain.
 
 **The amount is taken from the chain, not the request.** Claim 500 NIM and send 0.5,
 and 0.5 is what gets recorded. Unverified tips count for nothing on a profile.

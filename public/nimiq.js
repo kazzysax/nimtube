@@ -37,10 +37,10 @@ function providerPresent() {
 
 function devFallback() {
   // Dev fallback. Stable per browser so reloads keep the same account.
-  let dev = localStorage.getItem('nimtube.devAddress');
+  let dev = localStorage.getItem('predtube.devAddress');
   if (!dev) {
     dev = 'NQDEV' + Math.random().toString(36).slice(2, 10).toUpperCase();
-    localStorage.setItem('nimtube.devAddress', dev);
+    localStorage.setItem('predtube.devAddress', dev);
   }
   Object.assign(state, { ready: true, inNimiqPay: false, address: dev, deviceHash: 'dev-' + dev });
   return state;
@@ -111,5 +111,5 @@ export async function sendNim(toAddress, amountNim, note) {
 }
 
 export function deeplink(origin = location.origin) {
-  return `nimiqpay://miniapp?url=${origin.replace(/^https?:\/\//, '')}`;
+  return `nimiqpay://miniapp?url=${origin.replace(/^https?:\/\//, '')}/app`;
 }

@@ -31,7 +31,7 @@ is(r.status === 401, 'address alone is refused — no session without proof');
 // --- honest sign-in --------------------------------------------------------
 r = await j('POST', '/api/challenge', { address: victimAddr });
 const { message } = r.body;
-is(/^NimTube login: [0-9a-f]{48}$/.test(message), 'challenge is a one-time nonce');
+is(/^PredTube login: [0-9a-f]{48}$/.test(message), 'challenge is a one-time nonce');
 
 const sign = (kp, msg) => {
   const sig = kp.sign(Buffer.from(msg, 'utf8'));
@@ -66,7 +66,7 @@ r = await j('POST', '/api/session', {
 is(r.status === 401, 'a tampered challenge is rejected');
 
 // --- unknown nonce ---------------------------------------------------------
-const fakeMsg = 'NimTube login: ' + 'a'.repeat(48);
+const fakeMsg = 'PredTube login: ' + 'a'.repeat(48);
 r = await j('POST', '/api/session', { address: victimAddr, message: fakeMsg, ...sign(victim, fakeMsg) });
 is(r.status === 401, 'a nonce the server never issued is rejected');
 

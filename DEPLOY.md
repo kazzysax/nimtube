@@ -1,4 +1,4 @@
-# Deploying NimTube to Nimiq Pay
+# Deploying PredTube to Nimiq Pay
 
 Read this in order. Step 4 is where things will actually break.
 
@@ -50,7 +50,7 @@ ephemeral disk and every user disappears on the next deploy.
 ```
 ANTHROPIC_API_KEY=sk-ant-...
 CLAUDE_MODEL=claude-sonnet-5
-DB_FILE=/data/nimtube.db          # must be on the mounted volume
+DB_FILE=/data/predtube.db          # must be on the mounted volume
 PORT=3000
 ADMIN_KEY=<long random string>
 NIMIQ_RPC_URL=https://your-node/rpc   # without this, tips are never confirmed

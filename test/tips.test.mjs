@@ -50,14 +50,14 @@ r = await j('POST', '/api/markets/1/tip', { toUsername: 'alice', amountNim: 0.5,
 is(r.status === 400 && /yourself/.test(r.body.error), 'you cannot tip yourself');
 
 r = await j('POST', '/api/markets/1/tip', { toUsername: 'caller', amountNim: 0.5, txHash: H('a') }, A.token);
-is(r.status === 200 && r.body.marker === 'nimtube tip m1', 'a good tip is accepted and returns its on-chain marker');
+is(r.status === 200 && r.body.marker === 'predtube tip m1', 'a good tip is accepted and returns its on-chain marker');
 
 r = await j('POST', '/api/markets/1/tip', { toUsername: 'caller', amountNim: 0.5, txHash: H('a') }, A.token);
 is(r.status === 409, 'the same transaction cannot be submitted twice');
 
 // ---- the checks the watcher applies ---------------------------------------
 const tip = { market_id: 1, from_address: 'NQ11 AAAA', to_address: 'NQ22 CCCC', amount_nim: 0.5 };
-const data = Buffer.from('nimtube tip m1', 'utf8').toString('hex');
+const data = Buffer.from('predtube tip m1', 'utf8').toString('hex');
 const good = { from: 'NQ11AAAA', to: 'NQ22CCCC', value: 50000, recipientData: data, confirmations: 12 };
 const chk = (over, opts) => tips.checkTransaction({ ...good, ...over }, tip, opts);
 
@@ -68,7 +68,7 @@ is(chk({ confirmations: 2 }).state === 'pending', 'too few confirmations stays p
 is(chk({ executionResult: false }).state === 'failed', 'a transaction that failed on chain is rejected');
 is(chk({ from: 'NQ99 SOMEONE ELSE' }).state === 'failed', "quoting someone else's payment is rejected");
 is(chk({ to: 'NQ99 WRONG' }).state === 'failed', 'a payment to the wrong person is rejected');
-is(chk({ recipientData: Buffer.from('nimtube tip m7').toString('hex') }).state === 'failed',
+is(chk({ recipientData: Buffer.from('predtube tip m7').toString('hex') }).state === 'failed',
    'a payment tagged for a different market is rejected');
 is(chk({ recipientData: '' }).state === 'failed', 'an untagged payment is rejected');
 is(chk({ value: 0 }).state === 'failed', 'a zero-value payment is rejected');
