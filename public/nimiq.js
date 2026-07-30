@@ -28,45 +28,56 @@ async function loadSdk() {
   return sdk;
 }
 
-/** True when we're actually running inside the host app. */
+/** True when we're actually running inside the Nimiq Pay host app.
+ *  window.ethereum is not a Nimiq signal — it's injected by any EVM wallet
+ *  extension (MetaMask, Coinbase Wallet, ...) and was falsely tripping this. */
 function providerPresent() {
-  return typeof window !== 'undefined' && (window.nimiqPay || window.ethereum);
+  return typeof window !== 'undefined' && !!window.nimiqPay;
+}
+
+function devFallback() {
+  // Dev fallback. Stable per browser so reloads keep the same account.
+  let dev = localStorage.getItem('nimtube.devAddress');
+  if (!dev) {
+    dev = 'NQDEV' + Math.random().toString(36).slice(2, 10).toUpperCase();
+    localStorage.setItem('nimtube.devAddress', dev);
+  }
+  Object.assign(state, { ready: true, inNimiqPay: false, address: dev, deviceHash: 'dev-' + dev });
+  return state;
 }
 
 export async function connect() {
   state.language = window.nimiqPay?.language || 'en';
 
-  if (!providerPresent()) {
-    // Dev fallback. Stable per browser so reloads keep the same account.
-    let dev = localStorage.getItem('nimtube.devAddress');
-    if (!dev) {
-      dev = 'NQDEV' + Math.random().toString(36).slice(2, 10).toUpperCase();
-      localStorage.setItem('nimtube.devAddress', dev);
-    }
-    Object.assign(state, { ready: true, inNimiqPay: false, address: dev, deviceHash: 'dev-' + dev });
-    return state;
-  }
+  if (!providerPresent()) return devFallback();
 
-  const s = await loadSdk();
-  if (!s?.init) throw new Error('Nimiq Pay provider found but the SDK failed to load');
-
-  nimiq = await s.init();
-
-  // listAccounts() returns string[] of user-friendly addresses, behind a native
-  // confirmation dialog. Rejects with PermissionDeniedError if the user declines.
-  const accounts = await nimiq.listAccounts();
-  const address = Array.isArray(accounts) ? accounts[0] : null;
-  if (!address) throw new Error('No account was approved');
-
-  // Per-device, per-origin hash. Identifies the device, not the person — useful
-  // as an anti-alt signal, useless as an identity. Never fatal if refused.
-  let deviceHash = null;
   try {
-    deviceHash = await s.requestDeviceIdentifier({ reason: 'Reputation and anti-spam' });
-  } catch { /* user declined; carry on */ }
+    const s = await loadSdk();
+    if (!s?.init) throw new Error('Nimiq Pay provider found but the SDK failed to load');
 
-  Object.assign(state, { ready: true, inNimiqPay: true, address, deviceHash });
-  return state;
+    nimiq = await s.init();
+
+    // listAccounts() returns string[] of user-friendly addresses, behind a native
+    // confirmation dialog. Rejects with PermissionDeniedError if the user declines.
+    const accounts = await nimiq.listAccounts();
+    const address = Array.isArray(accounts) ? accounts[0] : null;
+    if (!address) throw new Error('No account was approved');
+
+    // Per-device, per-origin hash. Identifies the device, not the person — useful
+    // as an anti-alt signal, useless as an identity. Never fatal if refused.
+    let deviceHash = null;
+    try {
+      deviceHash = await s.requestDeviceIdentifier({ reason: 'Reputation and anti-spam' });
+    } catch { /* user declined; carry on */ }
+
+    Object.assign(state, { ready: true, inNimiqPay: true, address, deviceHash });
+    return state;
+  } catch (e) {
+    // window.nimiqPay was present but the handshake failed — don't leave
+    // state.address unset, which would silently break sign-in downstream.
+    console.warn('Nimiq Pay connect failed, falling back to dev mode:', e);
+    return devFallback();
+  }
 }
 
 /** Sign a server-issued challenge, proving we hold the key for this address.

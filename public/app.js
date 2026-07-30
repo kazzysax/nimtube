@@ -317,9 +317,11 @@ function bind() {
   });
 
   on('#finish, #finish2', 'click', async () => {
-    const r = await signIn({ username: S.username });
-    S.token = r.token; localStorage.setItem('nimtube.token', r.token);
-    S.me = r.user; render();
+    try {
+      const r = await signIn({ username: S.username });
+      S.token = r.token; localStorage.setItem('nimtube.token', r.token);
+      S.me = r.user; render();
+    } catch (err) { alert(err.message); }
   });
 
   on('[data-follow]', 'click', async e => {
