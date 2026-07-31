@@ -99,7 +99,7 @@ function screenNiches() {
 function screenFollow(people) {
   const list = people.length ? people.map(p => `
     <div class="row">
-      <span class="av"></span>
+      ${avatar(p.username)}
       <span class="rm"><b>@${esc(p.username)}</b><s>${p.played} calls settled</s></span>
       <span class="repn">${p.rep}</span>
       <button class="fb" data-follow="${esc(p.username)}">Follow</button>
@@ -119,6 +119,55 @@ function screenFollow(people) {
         <button class="ghost" id="finish2">Skip for now</button>
       </div>
     </div>`;
+}
+
+// ---------- avatars -------------------------------------------------------
+// Generated, never fetched: same username always gets the same face, and the
+// whole set shares one style so a feed of strangers still looks like one app.
+
+const AV_INK = [
+  ['#3D8BFF', '#2FD186'], ['#FFC94A', '#E07E06'], ['#8B5CF6', '#3D8BFF'],
+  ['#2FD186', '#0EA5A5'], ['#FF7A7A', '#FFB92C'], ['#F472B6', '#8B5CF6'],
+  ['#22D3EE', '#3D8BFF'], ['#A3E635', '#2FD186'], ['#FB923C', '#FF5C5C'],
+  ['#A78BFA', '#22D3EE'], ['#34D399', '#3D8BFF'], ['#FDE047', '#FB923C'],
+];
+
+// The motif is always a hexagon — the shape the rest of the app is built from —
+// varied by how it sits behind the initial rather than by being a different shape.
+const AV_MOTIF = [
+  '<polygon points="20,-2 38,8 38,28 20,38 2,28 2,8" opacity=".18"/>',
+  '<circle cx="31" cy="10" r="15" opacity=".16"/>',
+  '<polygon points="20,4 34,12 34,28 20,36 6,28 6,12" opacity=".14"/>',
+  '<rect x="-6" y="22" width="52" height="26" opacity=".15"/>',
+];
+
+const avHash = s => {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  return Math.abs(h);
+};
+
+function avatar(username, extra = '') {
+  const u = String(username || '?');
+  const n = avHash(u.toLowerCase());
+  const [a, b] = AV_INK[n % AV_INK.length];
+  const motif = AV_MOTIF[(n >> 5) % AV_MOTIF.length];
+  const initial = (u.match(/[a-z0-9]/i) || ['?'])[0].toUpperCase();
+  // Derived from the same hash as the artwork, so identical ids always mean
+  // identical contents even if two names collide.
+  const id = `av${n.toString(36)}`;
+
+  return `<span class="av ${extra}" data-av="${esc(u)}">
+    <svg viewBox="0 0 40 40" aria-hidden="true">
+      <defs><linearGradient id="${id}" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0" stop-color="${a}"/><stop offset="1" stop-color="${b}"/>
+      </linearGradient></defs>
+      <rect width="40" height="40" fill="url(#${id})"/>
+      <g fill="#fff">${motif}</g>
+      <text x="20" y="21" text-anchor="middle" dominant-baseline="central"
+        font-family="Archivo, system-ui, sans-serif" font-weight="800" font-size="19"
+        fill="rgba(255,255,255,.96)">${esc(initial)}</text>
+    </svg></span>`;
 }
 
 // ---------- feed ----------------------------------------------------------
@@ -143,7 +192,7 @@ function postHtml(m) {
   const committed = m.committed;
   return h`
     <div class="post" data-market="${m.id}">
-      <div class="ph"><span class="av"></span><b data-viewuser="${esc(m.creator?.username || '')}">@${esc(m.creator?.username || '')}</b>
+      <div class="ph">${avatar(m.creator?.username)}<b data-viewuser="${esc(m.creator?.username || '')}">@${esc(m.creator?.username || '')}</b>
         <span class="rp">${m.creator?.rep ?? 0}</span>
         <s class="${left.soon ? 'soon' : ''}">${left.text}</s></div>
       ${tipPoolPill(m)}
@@ -173,7 +222,7 @@ const tipPoolPill = m => m.tipPool
 function resolvedHtml(m) {
   if (m.state === 'void') {
     return h`<div class="post"><span class="stamp">Void</span>
-      <div class="ph"><span class="av"></span><b>@${esc(m.creator?.username || '')}</b></div>
+      <div class="ph">${avatar(m.creator?.username)}<b>@${esc(m.creator?.username || '')}</b></div>
       <p class="q">${esc(m.question)}</p>
       <p class="src"><u></u>${esc(m.void_reason || 'Could not be settled')}</p>
       <p class="lock">ALL STAKES REFUNDED · NO REPUTATION MOVED</p></div>`;
@@ -182,7 +231,7 @@ function resolvedHtml(m) {
   const d = m.myRepDelta;
   return h`
     <div class="post" data-market="${m.id}"><span class="stamp">Resolved</span>
-      <div class="ph"><span class="av"></span><b data-viewuser="${esc(m.creator?.username || '')}">@${esc(m.creator?.username || '')}</b>
+      <div class="ph">${avatar(m.creator?.username)}<b data-viewuser="${esc(m.creator?.username || '')}">@${esc(m.creator?.username || '')}</b>
         <span class="rp">${m.creator?.rep ?? 0}</span></div>
       <p class="q">${esc(m.question)}</p>
       <div class="bar"><u class="y" style="width:${yes}%"></u><u class="n" style="width:${100 - yes}%"></u></div>
@@ -323,7 +372,7 @@ function screenExplore(board) {
       ${board.length ? board.map((p, i) => `
         <div class="row" data-viewuser="${esc(p.username)}">
           <span class="rank">${i + 1}</span>
-          <span class="av"></span>
+          ${avatar(p.username)}
           <span class="rm"><b>@${esc(p.username)}</b><s>${p.played} settled · ${p.average} avg</s></span>
           <span class="repn">${p.rep}</span>
           <button class="fb" data-follow="${esc(p.username)}">Follow</button>
@@ -382,7 +431,7 @@ function screenProfile(p, isSelf = true) {
         : `<span class="tipicon" data-tip-profile="${esc(p.username)}" title="Tip @${esc(p.username)}">${TIP_ICON}</span>`}
     </div>
     <div class="profilehead">
-      <span class="av"></span>
+      ${avatar(p.username)}
       <h2>@${esc(p.username)}</h2>
       <p class="sub" style="margin-bottom:0">Joined ${new Date(p.joined).toLocaleDateString()}</p>
     </div>
@@ -430,6 +479,9 @@ const tabsHtml = () => `<div class="tabs">${TABS.map(([k, l]) =>
 
 // ---------- compose -------------------------------------------------------
 
+const I_COPY = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+  <rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg>`;
+
 function composeHtml() {
   return h`
     <div class="sheet" id="sheet"><div class="sheetbox">
@@ -437,9 +489,16 @@ function composeHtml() {
       <p class="sub" style="text-align:left">Write it however you like. It gets rewritten into something that can actually be settled.</p>
       ${S.gateError ? `<div class="err">${esc(S.gateError.reason)}</div>` : ''}
       ${S.gateError?.suggested_fix ? `
-        <div class="fix"><b>Try this instead</b><br>${esc(S.gateError.suggested_fix.question)}
-        <br><span style="color:var(--dimmer)">Settled by ${esc(S.gateError.suggested_fix.source_name)}</span></div>` : ''}
-      <textarea id="ctext" placeholder="will bitcoin pump this month"></textarea>
+        <div class="fix">
+          <div class="fixhead">
+            <b>Try this instead</b>
+            <span class="copy" id="fixcopy" title="Copy this wording">${I_COPY}<i>Copy</i></span>
+          </div>
+          <p class="fixq">${esc(S.gateError.suggested_fix.question)}</p>
+          <span style="color:var(--dimmer)">Settled by ${esc(S.gateError.suggested_fix.source_name)}</span>
+          <button class="fixuse" id="fixuse">Use this wording</button>
+        </div>` : ''}
+      <textarea id="ctext" placeholder="good morning, what do you reckon BTC does in the next hour?"></textarea>
 
       <div class="pool ${S.poolOpen ? 'on' : ''}">
         <div class="poolhead" id="pooltoggle">
@@ -678,6 +737,31 @@ function bind() {
     if (S.draft) ctext.value = S.draft;
     ctext.addEventListener('input', () => { S.draft = ctext.value; });
   }
+  // The gate's rewrite is usually what you wanted — make it one tap to take it.
+  on('#fixuse', 'click', () => {
+    const q = S.gateError?.suggested_fix?.question;
+    if (!q) return;
+    S.draft = q;
+    const box = el.querySelector('#ctext');
+    if (box) { box.value = q; box.focus(); }
+  });
+
+  on('#fixcopy', 'click', async e => {
+    const q = S.gateError?.suggested_fix?.question;
+    if (!q) return;
+    const label = e.currentTarget.querySelector('i');
+    try {
+      await navigator.clipboard.writeText(q);
+      label.textContent = 'Copied';
+    } catch {
+      // Clipboard access can be refused; selecting the text still lets them copy.
+      const box = el.querySelector('.fixq');
+      if (box) getSelection().selectAllChildren(box);
+      label.textContent = 'Select + copy';
+    }
+    setTimeout(() => { label.textContent = 'Copy'; }, 1600);
+  });
+
   on('#pooltoggle', 'click', () => { S.poolOpen = !S.poolOpen; readPool(); render(); });
   on('#pnim, #pwin', 'input', readPool);
 

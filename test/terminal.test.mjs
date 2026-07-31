@@ -28,6 +28,16 @@ is(r.closes_in_minutes === 2880, 'gate: returns a duration, not a date it comput
 is(lastBody.system.includes('DURATIONS IN MINUTES'), 'gate: is told to hand back durations');
 is(lastBody.system.includes('"in two days" -> 2880'),
    'gate: is shown the conversion, since it kept turning two days into two hours');
+
+// People type greetings and open-ended questions. Neither is a reason to reject.
+is(lastBody.system.includes('good morning'),
+   'gate: is told to strip greetings rather than judge them');
+is(/NEVER reject something because of how\s+casually it was worded/.test(lastBody.system),
+   'gate: is told casual wording is not grounds for rejection');
+is(lastBody.system.includes('MAGNITUDE'),
+   'gate: is told to turn "what will X be" into the binary question meant');
+is(lastBody.system.includes('NO web access here') && lastBody.system.includes('Never invent one'),
+   'gate: is told it cannot know current prices, so it must not invent a threshold');
 is(lastBody.system.includes('If this event had already happened'), 'gate: ships the core test in the system prompt');
 is(lastBody.system.includes('polymarket'), 'gate: offers the polymarket source tier');
 is(!lastBody.tools, 'gate: no web search at creation time');
