@@ -105,6 +105,8 @@ CREATE TABLE IF NOT EXISTS tips (
 );
 CREATE INDEX IF NOT EXISTS idx_tips_pending ON tips(verified, failed_reason);
 
+-- Tip-pool awards: what a call's author owes its top scorers. Carries the same
+-- retry bookkeeping as tips, because paying one is verified the same way.
 CREATE TABLE IF NOT EXISTS bounty_awards (
   id         INTEGER PRIMARY KEY,
   market_id  INTEGER NOT NULL REFERENCES markets(id),
@@ -112,8 +114,11 @@ CREATE TABLE IF NOT EXISTS bounty_awards (
   amount_nim REAL NOT NULL,
   paid       INTEGER NOT NULL DEFAULT 0,
   tx_hash    TEXT,
+  attempts   INTEGER NOT NULL DEFAULT 0,
+  failed_reason TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_awards_tx ON bounty_awards(tx_hash) WHERE tx_hash IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS challenges (
   nonce      TEXT PRIMARY KEY,
@@ -153,6 +158,12 @@ CREATE TABLE IF NOT EXISTS sessions (
       CREATE INDEX IF NOT EXISTS idx_tips_pending ON tips(verified, failed_reason);
     `);
   }
+}
+
+// Awards predate the payout flow, so older databases lack its bookkeeping.
+for (const [col, decl] of [['attempts', 'INTEGER NOT NULL DEFAULT 0'], ['failed_reason', 'TEXT']]) {
+  const has = db.prepare('PRAGMA table_info(bounty_awards)').all().some(c => c.name === col);
+  if (!has) db.exec(`ALTER TABLE bounty_awards ADD COLUMN ${col} ${decl}`);
 }
 
 export default db;

@@ -22,6 +22,7 @@ const S = {
   poolOpen: false,
   pool: { nim: '', winners: '' },
   draft: '',
+  owed: [],
 };
 
 const el = document.getElementById('app');
@@ -239,8 +240,9 @@ const I_HEX = `<svg viewBox="0 0 24 24"><polygon points="6.2,2.6 17.8,2.6 23,12 
 const I_PLANE = `<svg viewBox="0 0 24 24" fill="currentColor">
   <path d="M2.3 11.4 21.3 3.1c.6-.26 1.22.36.96.96l-8.3 19c-.27.62-1.15.6-1.38-.05l-2.6-7.25a1 1 0 0 0-.6-.6L2.35 12.8c-.66-.24-.68-1.12-.05-1.4Z"/></svg>`;
 
-function screenWallet(w) {
+function screenWallet(w, owed = []) {
   const bal = (w.balanceNim !== null && w.balanceNim !== undefined) ? w.balanceNim.toFixed(2) : '—';
+  const total = owed.reduce((n, a) => n + a.amount_nim, 0);
   return h`
     <div class="glow"></div>
     <div class="whead"><h1>Wallet</h1></div>
@@ -285,8 +287,25 @@ function screenWallet(w) {
     ${w.pool?.wins ? `
       <div class="group poolwin">
         <span class="gm"><b>Top-scorer tips</b><s>${w.pool.wins} call${w.pool.wins === 1 ? '' : 's'} you placed top on</s></span>
-        <span class="gv"><b>${w.pool.owed}</b><s>NIM owed</s></span>
+        <span class="gv"><b>${w.pool.owed}</b><s>NIM owed you</s></span>
       </div>` : ''}
+
+    ${owed.length ? `
+      <div class="wsec"><h3>You owe</h3></div>
+      <div class="group">
+        ${owed.map(a => `
+          <div class="grow">
+            <span class="gm"><b>@${esc(a.username)}</b><s>${esc(a.question)}</s></span>
+            <span class="gv"><b>${a.amount_nim}</b><s>NIM</s></span>
+            <button class="fb pay" data-pay="${a.id}" ${a.submitted ? 'disabled' : ''}>
+              ${a.submitted ? 'Confirming' : 'Pay'}</button>
+          </div>
+          ${a.failed_reason ? `<p class="lock" style="color:var(--no);margin:0 0 10px">${esc(a.failed_reason).toUpperCase()}</p>` : ''}
+        `).join('')}
+      </div>
+      <p class="poolnote" style="padding:9px 18px 0">
+        ${total.toFixed(2)} NIM promised to the top scorers on your calls.
+        Each one is a separate transaction you approve in Nimiq Pay.</p>` : ''}
     ${w.tipsPending ? `<p class="lock">${w.tipsPending} NIM AWAITING CONFIRMATION</p>` : ''}
     ${(w.rejected || []).map(x => `<p class="lock" style="color:var(--no)">REJECTED · ${esc(x.failed_reason)}</p>`).join('')}
 
@@ -481,8 +500,9 @@ async function render() {
     return bind();
   }
   if (S.tab === 'wallet') {
-    const w = await api('/wallet');
-    el.innerHTML = screenWallet(w);
+    const [w, owed] = await Promise.all([api('/wallet'), api('/payouts').catch(() => [])]);
+    S.owed = owed;
+    el.innerHTML = screenWallet(w, owed);
   } else if (S.tab === 'explore') {
     const board = await api('/leaderboard').catch(() => []);
     el.innerHTML = screenExplore(board);
@@ -622,6 +642,28 @@ function bind() {
       else S.gateError = r;
       render();
     } catch (err) { S.gateError = { reason: err.message }; render(); }
+  });
+
+  // Paying a tip pool: one transaction per winner, each approved in Nimiq Pay.
+  // The marker the server hands back is what proves on chain which debt this
+  // settles, so it has to travel with the transaction.
+  on('[data-pay]', 'click', async e => {
+    e.stopPropagation();
+    const btn = e.currentTarget;
+    const id = Number(btn.dataset.pay);
+    const owed = S.owed?.find(a => a.id === id);
+    if (!owed) return;
+
+    const before = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Confirm…';
+    try {
+      const hash = await wallet.sendNim(owed.address, owed.amount_nim, owed.marker);
+      await api('/payouts/' + id, { method: 'POST', body: { txHash: hash } });
+      render();
+    } catch (err) {
+      btn.disabled = false; btn.textContent = before;
+      alert(err.message);
+    }
   });
 
   on('#tipcancel', 'click', () => { S.tipTarget = null; render(); });

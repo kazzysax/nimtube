@@ -209,6 +209,60 @@ app.post('/api/tips', wrap((req, res) => {
   res.json({ ok: true, pendingVerification: true, marker: tipJob.tipMarker(toUsername) });
 }));
 
+/** What I owe as an author: the tip pools my settled calls promised their top
+ *  scorers. Includes each winner's address so the client can pay them. */
+app.get('/api/payouts', wrap((req, res) => {
+  if (!need(req, res)) return;
+  const rows = db.prepare(`
+    SELECT a.id, a.market_id, a.amount_nim, a.failed_reason,
+           a.tx_hash IS NOT NULL AS submitted,
+           u.username, u.address, m.question
+    FROM bounty_awards a
+    JOIN markets m ON m.id = a.market_id
+    JOIN users u ON u.id = a.user_id
+    WHERE m.creator_id = ? AND a.paid = 0
+    ORDER BY a.created_at ASC
+  `).all(req.user.id);
+
+  res.json(rows.map(r => ({
+    ...r,
+    submitted: !!r.submitted,
+    marker: tipJob.poolMarker(r.username, r.market_id),
+  })));
+}));
+
+/** Record the transaction that pays one award. Same trust model as tips: the
+ *  hash is a claim, and the watcher decides whether the debt is actually clear. */
+app.post('/api/payouts/:id', wrap((req, res) => {
+  if (!need(req, res)) return;
+  const { txHash } = req.body || {};
+  if (!/^[0-9a-fA-F]{64}$/.test(String(txHash || ''))) {
+    throw Object.assign(new Error('A valid transaction hash is required'), { status: 400 });
+  }
+
+  const award = db.prepare(`
+    SELECT a.id, a.paid, m.creator_id FROM bounty_awards a
+    JOIN markets m ON m.id = a.market_id WHERE a.id = ?`).get(Number(req.params.id));
+
+  if (!award) return res.status(404).json({ error: 'No such award' });
+  if (award.creator_id !== req.user.id) {
+    throw Object.assign(new Error('Only the author of that call can pay it'), { status: 403 });
+  }
+  if (award.paid) throw Object.assign(new Error('That one is already paid'), { status: 409 });
+
+  // A fresh attempt clears the last failure, otherwise the watcher would skip it.
+  try {
+    db.prepare('UPDATE bounty_awards SET tx_hash = ?, failed_reason = NULL, attempts = 0 WHERE id = ?')
+      .run(String(txHash).toLowerCase(), award.id);
+  } catch (e) {
+    if (String(e.message).includes('UNIQUE')) {
+      throw Object.assign(new Error('That transaction has already been submitted'), { status: 409 });
+    }
+    throw e;
+  }
+  res.json({ ok: true, pendingVerification: true });
+}));
+
 app.get('/api/wallet', wrap(async (req, res) => {
   if (!need(req, res)) return;
   const sent = db.prepare('SELECT COALESCE(SUM(amount_nim),0) t FROM tips WHERE from_id=?').get(req.user.id).t;

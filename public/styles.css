@@ -209,6 +209,8 @@ textarea{width:100%;min-height:110px;background:var(--card);border:1px solid var
 .gv s{display:block;text-decoration:none;font-family:var(--mono);font-size:10px;color:var(--dimmer);margin-top:3px}
 
 .poolwin{display:flex;align-items:center;gap:14px;padding:15px 16px;margin-top:9px}
+.fb.pay{background:rgba(47,209,134,.14);border-color:rgba(47,209,134,.4);color:var(--green);flex:0 0 auto}
+.fb.pay[disabled]{opacity:.45;cursor:default;color:var(--dim)}
 .tipinfo{display:flex;align-items:center;gap:14px;padding:18px 16px}
 .tipinfo .lead b{display:block;font-family:var(--display);font-weight:800;font-size:33px;color:var(--green);line-height:1}
 .tipinfo .lead s{display:block;text-decoration:none;font-family:var(--mono);font-size:9.5px;letter-spacing:.15em;
