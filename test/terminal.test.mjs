@@ -38,6 +38,12 @@ is(lastBody.system.includes('MAGNITUDE'),
    'gate: is told to turn "what will X be" into the binary question meant');
 is(lastBody.system.includes('NO web access here') && lastBody.system.includes('Never invent one'),
    'gate: is told it cannot know current prices, so it must not invent a threshold');
+is(lastBody.system.includes("daily open") && lastBody.system.includes('previous close'),
+   'gate: anchors magnitude questions to a published checkpoint, not a bespoke instant');
+is(lastBody.system.includes('today\'s daily open (00:00 UTC) on Coinbase?'),
+   'gate: the worked example anchors to a checkpoint a resolver can actually find');
+is(lastBody.system.includes('category must be exactly one of: Crypto, Sports, Music, Politics, Other'),
+   'gate: category is constrained to the fixed taxonomy, not freeform text');
 is(lastBody.system.includes('If this event had already happened'), 'gate: ships the core test in the system prompt');
 is(lastBody.system.includes('polymarket'), 'gate: offers the polymarket source tier');
 is(!lastBody.tools, 'gate: no web search at creation time');

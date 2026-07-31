@@ -1,6 +1,7 @@
 import { db } from './db.js';
 import { rawWeight, bar, sideTotals, settle, MIN_WAGERS_FOR_CAP } from './math.js';
 import { gate } from './terminal.js';
+import { normalizeCategory } from './categories.js';
 
 const MAX_MARKETS_PER_DAY = 5;
 const MIN_OPEN_MINUTES = 5;
@@ -63,7 +64,7 @@ export async function createMarket(user, rawText, { tipNim = 0, tipWinners = 0, 
     // Kept verbatim. The feed is people talking, not a contract being read aloud.
     raw_text: String(rawText).trim(),
     question: verdict.question,
-    category: verdict.category,
+    category: normalizeCategory(verdict.category),
     source_tier: verdict.source_tier,
     source_name: verdict.source_name,
     source_detail: verdict.source_detail,

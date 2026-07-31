@@ -3,6 +3,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync } from 'fs';
 import { dirname } from 'path';
+import { normalizeCategory } from './categories.js';
 
 const FILE = process.env.DB_FILE || './data/predtube.db';
 mkdirSync(dirname(FILE), { recursive: true });
@@ -72,6 +73,8 @@ CREATE TABLE IF NOT EXISTS markets (
   bounty_nim    REAL NOT NULL DEFAULT 0,
   bounty_winners INTEGER NOT NULL DEFAULT 0,
   bounty_tx     TEXT,
+  resolve_attempts INTEGER NOT NULL DEFAULT 0,  -- durable retry count; survives a deploy
+  resolve_last_try TEXT,
   created_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_markets_state ON markets(state, resolves_at);
@@ -133,6 +136,15 @@ CREATE TABLE IF NOT EXISTS sessions (
   user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Welcome checklist. One row per quest a user has completed; the reward is
+-- paid exactly once, the moment the row is first inserted.
+CREATE TABLE IF NOT EXISTS quest_progress (
+  user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  quest_key    TEXT NOT NULL,
+  completed_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (user_id, quest_key)
+);
 `);
 
 // Older deployments created `tips.market_id` as NOT NULL, back when every tip was
@@ -185,6 +197,30 @@ CREATE TABLE IF NOT EXISTS sessions (
   if (!ucols.includes('results_seen_at')) {
     db.exec('ALTER TABLE users ADD COLUMN results_seen_at TEXT');
     db.exec("UPDATE users SET results_seen_at = datetime('now')");
+  }
+}
+
+// Categories used to be freeform text from the model ('Football', 'Weather',
+// 'AI', ...). Fold every existing market into the fixed taxonomy so old posts
+// still show up under one of the feed's chips instead of under none of them.
+{
+  const dirty = db.prepare(
+    `SELECT id, category FROM markets WHERE category NOT IN ('Crypto','Sports','Music','Politics','Other')`
+  ).all();
+  for (const r of dirty) {
+    db.prepare('UPDATE markets SET category = ? WHERE id = ?').run(normalizeCategory(r.category), r.id);
+  }
+}
+
+// Retry state used to live only in the resolver's in-memory Map, reset by
+// every deploy. Older databases predate the durable columns.
+{
+  const cols = db.prepare('PRAGMA table_info(markets)').all().map(c => c.name);
+  if (!cols.includes('resolve_attempts')) {
+    db.exec('ALTER TABLE markets ADD COLUMN resolve_attempts INTEGER NOT NULL DEFAULT 0');
+  }
+  if (!cols.includes('resolve_last_try')) {
+    db.exec('ALTER TABLE markets ADD COLUMN resolve_last_try TEXT');
   }
 }
 

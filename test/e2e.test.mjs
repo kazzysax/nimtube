@@ -42,12 +42,17 @@ for(const n of ['nkechi','dami','fold','obi','ada']){
   toks[n]=s.body.token;
 }
 
-// a market, inserted directly so the test doesn't need an API key
+// a market, inserted directly so the test doesn't need an API key. Authored by
+// a dedicated account, not chidi — chidi is here to wager, and crediting her
+// with authorship of a market she didn't create through the API would trip
+// the post1 welcome quest as a side effect of test scaffolding.
+const author=(await j('POST','/api/session',{address:'NQ11 AUTHOR',username:'author1',deviceHash:'d_author'})).body.token;
+const authorId=db.prepare("SELECT id FROM users WHERE username='author1'").get().id;
 const now=new Date(), close=new Date(Date.now()+3600e3), res_=new Date(Date.now()+7200e3);
 db.prepare(`INSERT INTO markets (id,creator_id,question,category,source_tier,source_name,source_detail,
-  criteria_yes,criteria_no,opens_at,closes_at,resolves_at) VALUES (1,1,'Will BTC close above 120k on 31 Aug?',
+  criteria_yes,criteria_no,opens_at,closes_at,resolves_at) VALUES (1,?,'Will BTC close above 120k on 31 Aug?',
   'crypto','auto','CoinGecko','BTC/USD daily close','close > 120000','close <= 120000',?,?,?)`)
-  .run(now.toISOString(),close.toISOString(),res_.toISOString());
+  .run(authorId,now.toISOString(),close.toISOString(),res_.toISOString());
 
 // an untouched market opens at 50/50
 r=await j('GET','/api/markets/1',null,toks.chidi);
@@ -109,8 +114,8 @@ is(!('points' in r.body)&&!('stake' in r.body),'profile hides balance and stakes
 
 // one-sided market voids and refunds
 db.prepare(`INSERT INTO markets (id,creator_id,question,category,source_tier,source_name,source_detail,
-  criteria_yes,criteria_no,opens_at,closes_at,resolves_at) VALUES (2,1,'One-sided?','crypto','auto','X','y','a','b',?,?,?)`)
-  .run(now.toISOString(),close.toISOString(),res_.toISOString());
+  criteria_yes,criteria_no,opens_at,closes_at,resolves_at) VALUES (2,?,'One-sided?','crypto','auto','X','y','a','b',?,?,?)`)
+  .run(authorId,now.toISOString(),close.toISOString(),res_.toISOString());
 await j('POST','/api/markets/2/wager',{side:'yes',stake:3},toks.dami);
 const before=db.prepare("SELECT points FROM users WHERE username='dami'").get().points;
 settleMarket(2,'YES',{});

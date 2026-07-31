@@ -1,6 +1,6 @@
 import * as wallet from './nimiq.js';
 
-const CATEGORIES = ['Crypto', 'Football', 'Politics', 'Music', 'Weather', 'AI'];
+const CATEGORIES = ['Crypto', 'Sports', 'Music', 'Politics', 'Other'];
 const STAKES = [1, 3, 5, 10, 20];
 const PRIOR_WAGERS = 3;              // below this the bar is still mostly its 50/50 prior
 
@@ -13,7 +13,7 @@ const S = {
   niches: new Set(),
   pendingFollows: new Set(),
   tab: 'feed',
-  category: null,
+  section: 'Following',
   feedState: 'open',
   markets: [],
   stake: 3,
@@ -295,7 +295,7 @@ function digestHtml(d) {
 }
 
 function screenFeed() {
-  const chips = ['All', ...CATEGORIES];
+  const chips = ['Following', 'All', ...CATEGORIES];
   return h`
     <div class="glow"></div>
     <div class="top" style="justify-content:center">
@@ -303,8 +303,8 @@ function screenFeed() {
     </div>
     <div class="chips">
       <span class="chip ${S.feedState === 'resolved' ? 'on' : ''}" data-state="resolved">Resolved</span>
-      ${chips.map(c => `<span class="chip ${(!S.category && c === 'All') || S.category === c ? 'on' : ''}"
-        data-cat="${c === 'All' ? '' : c}">${c}</span>`).join('')}
+      ${chips.map(c => `<span class="chip ${S.section === c ? 'on' : ''}"
+        data-section="${c}">${c}</span>`).join('')}
     </div>
     <div class="feed">
       ${digestHtml(S.digest)}
@@ -398,11 +398,29 @@ function screenWallet(w, owed = []) {
     ${tabsHtml()}`;
 }
 
-function screenExplore(board) {
+/** A one-time onboarding nudge, not a permanent fixture — gone once every quest
+ *  is done. Rewards are already banked server-side by the time this renders;
+ *  this is only ever a read of what happened, never what causes it. */
+function questsHtml(quests) {
+  if (!quests?.length || quests.every(q => q.done)) return '';
+  return `
+    <div class="section" style="padding:0 0 2px"><h3>Welcome checklist</h3></div>
+    <div class="qlist">
+      ${quests.map(q => `
+        <div class="qrow ${q.done ? 'done' : ''}">
+          <span class="qcheck">${q.done ? '✓' : ''}</span>
+          <span class="qm"><b>${esc(q.label)}</b><s>${q.progress}/${q.target}</s></span>
+          <span class="qreward">+${q.reward}</span>
+        </div>`).join('')}
+    </div>`;
+}
+
+function screenExplore(board, quests) {
   return h`
     <div class="glow"></div>
     <div class="top"><span class="logo">Explore</span><span class="pts">${S.me?.points ?? 0} PTS</span></div>
     <div class="feed">
+      ${questsHtml(quests)}
       <div class="section" style="padding:0 0 2px"><h3>People to follow</h3></div>
       ${board.length ? board.map(p => `
         <div class="row" data-viewuser="${esc(p.username)}">
@@ -696,8 +714,11 @@ async function render() {
     S.owed = owed;
     el.innerHTML = screenWallet(w, owed);
   } else if (S.tab === 'explore') {
-    const board = await api('/explore').catch(() => []);
-    el.innerHTML = screenExplore(board);
+    const [board, quests] = await Promise.all([
+      api('/explore').catch(() => []),
+      api('/quests').catch(() => []),
+    ]);
+    el.innerHTML = screenExplore(board, quests);
   } else if (S.tab === 'positions') {
     const positions = await api('/positions').catch(() => []);
     el.innerHTML = screenPositions(positions);
@@ -706,7 +727,12 @@ async function render() {
     const profile = await api('/users/' + encodeURIComponent(uname)).catch(() => null);
     el.innerHTML = screenProfile(profile, uname === S.me.username);
   } else {
-    const q = new URLSearchParams({ state: S.feedState, ...(S.category ? { category: S.category } : {}) });
+    // Following/All are scope, not category — everything else narrows within
+    // the whole app, the same way tapping into a category on any social feed
+    // means "show me this topic from everyone," not just people I follow.
+    const scope = S.section === 'Following' ? 'following' : 'all';
+    const category = (S.section !== 'Following' && S.section !== 'All') ? S.section : null;
+    const q = new URLSearchParams({ state: S.feedState, scope, ...(category ? { category } : {}) });
     const [markets, digest] = await Promise.all([
       api('/feed?' + q).catch(() => []),
       api('/digest').catch(() => null),
@@ -792,7 +818,9 @@ function bind() {
     btn.disabled = true;
     try {
       await api(`/users/${encodeURIComponent(u)}/follow`, { method: following ? 'DELETE' : 'POST' });
-      // Who you follow decides the feed, so the whole view has to be rebuilt.
+      // Following a 2nd person can complete a quest and pay out points, so the
+      // header balance needs a refresh alongside the feed rebuild.
+      S.me = await api('/me').catch(() => S.me);
       render();
     } catch (err) { btn.disabled = false; alert(err.message); }
   });
@@ -849,7 +877,7 @@ function bind() {
     S.tipTarget = { username: e.currentTarget.dataset.tipProfile, locked: true, amount: '', sending: false, error: null };
     render();
   });
-  on('[data-cat]', 'click', e => { S.category = e.currentTarget.dataset.cat || null; S.feedState = 'open'; render(); });
+  on('[data-section]', 'click', e => { S.section = e.currentTarget.dataset.section; S.feedState = 'open'; render(); });
   on('[data-state]', 'click', () => { S.feedState = S.feedState === 'resolved' ? 'open' : 'resolved'; render(); });
   on('[data-stake]', 'click', e => { S.stake = Number(e.currentTarget.dataset.stake); render(); });
 
@@ -947,6 +975,8 @@ function bind() {
       if (r.approved) {
         S.composing = false; S.draft2 = null; S.gateError = null; S.draft = '';
         S.pool = { nim: '', winners: '' }; S.poolOpen = false;
+        // A first post can complete a quest and pay out points.
+        S.me = await api('/me').catch(() => S.me);
       } else S.gateError = r;
       render();
     } catch (err) {

@@ -11,6 +11,7 @@ import { createMarket, placeWager, viewMarket, feed, myPositions, scheduleFrom }
 import { gate as gateText } from './core/terminal.js';
 import { issueChallenge, verifyChallenge, devBypassAllowed } from './core/auth.js';
 import { getAccountByAddress } from './core/rpc.js';
+import { progress as questProgress, checkAndAward as checkQuests } from './core/quests.js';
 import * as resolverJob from './jobs/resolver.js';
 import * as tipJob from './jobs/tipwatcher.js';
 
@@ -237,13 +238,16 @@ app.post('/api/markets', wrap(async (req, res) => {
   } else {
     out = await createMarket(req.user, text, { tipNim, tipWinners });
   }
+  if (out.approved) checkQuests(req.user.id);
   res.status(out.approved ? 201 : 200).json(out);
 }));
 
 app.post('/api/markets/:id/wager', wrap((req, res) => {
   if (!need(req, res)) return;
   const { side, stake } = req.body || {};
-  res.json(placeWager(req.user, Number(req.params.id), side, Number(stake)));
+  const out = placeWager(req.user, Number(req.params.id), side, Number(stake));
+  checkQuests(req.user.id);
+  res.json(out);
 }));
 
 /** Who took which side, and how hard. Reading the book costs you a position in
@@ -316,7 +320,14 @@ app.post('/api/users/:username/follow', wrap((req, res) => {
   if (!target) return;
   db.prepare('INSERT OR IGNORE INTO follows (follower_id, followee_id) VALUES (?,?)')
     .run(req.user.id, target.id);
+  checkQuests(req.user.id);
   res.json({ following: true, ...followCounts(target.id) });
+}));
+
+/** The welcome checklist shown on Explore. */
+app.get('/api/quests', wrap((req, res) => {
+  if (!need(req, res)) return;
+  res.json(questProgress(req.user.id));
 }));
 
 app.delete('/api/users/:username/follow', wrap((req, res) => {
