@@ -42,6 +42,14 @@ db.prepare(`INSERT INTO markets (id,creator_id,question,category,source_tier,sou
 // an untouched market opens at 50/50
 r=await j('GET','/api/markets/1',null,toks.chidi);
 is(r.body.bar===50,'a market with no calls opens at 50/50');
+
+// the terms are public — they are the contract everyone wagers against
+is(r.body.criteria_yes==='close > 120000'&&r.body.criteria_no==='close <= 120000',
+   'resolution terms are visible without having taken a side');
+is(r.body.source_name==='CoinGecko','so is the source that settles it');
+// rows predating raw_text fall back to the formal wording rather than showing nothing
+is(r.body.said==='Will BTC close above 120k on 31 Aug?',
+   'a market with no raw text falls back to its formal question');
 is(r.body.committed===false,'not committed yet');
 
 // and the book is shut to anyone who has not taken a side

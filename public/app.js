@@ -22,6 +22,7 @@ const S = {
   poolOpen: false,
   pool: { nim: '', winners: '' },
   draft: '',
+  draft2: null,
   owed: [],
   voters: null,
 };
@@ -196,7 +197,7 @@ function postHtml(m) {
         <span class="rp">${m.creator?.rep ?? 0}</span>
         <s class="${left.soon ? 'soon' : ''}">${left.text}</s></div>
       ${tipPoolPill(m)}
-      <p class="q">${esc(m.question)}</p>
+      <p class="q">${esc(m.said || m.question)}</p>
       <p class="src"><u></u>${esc(m.source_name)}</p>
       ${barHtml(m)}
       ${committed ? `
@@ -223,7 +224,7 @@ function resolvedHtml(m) {
   if (m.state === 'void') {
     return h`<div class="post"><span class="stamp">Void</span>
       <div class="ph">${avatar(m.creator?.username)}<b>@${esc(m.creator?.username || '')}</b></div>
-      <p class="q">${esc(m.question)}</p>
+      <p class="q">${esc(m.said || m.question)}</p>
       <p class="src"><u></u>${esc(m.void_reason || 'Could not be settled')}</p>
       <p class="lock">ALL STAKES REFUNDED · NO REPUTATION MOVED</p></div>`;
   }
@@ -233,7 +234,7 @@ function resolvedHtml(m) {
     <div class="post" data-market="${m.id}"><span class="stamp">Resolved</span>
       <div class="ph">${avatar(m.creator?.username)}<b data-viewuser="${esc(m.creator?.username || '')}">@${esc(m.creator?.username || '')}</b>
         <span class="rp">${m.creator?.rep ?? 0}</span></div>
-      <p class="q">${esc(m.question)}</p>
+      <p class="q">${esc(m.said || m.question)}</p>
       <div class="bar"><u class="y" style="width:${yes}%"></u><u class="n" style="width:${100 - yes}%"></u></div>
       <div class="blab"><span class="yl">YES${m.outcome === 'YES' ? ' · CORRECT' : ''}</span>
         <span class="nl">NO${m.outcome === 'NO' ? ' · CORRECT' : ''}</span></div>
@@ -392,7 +393,7 @@ function screenPositions(positions) {
           <span>${esc(p.category).toUpperCase()}</span>
           <span>${p.state === 'open' ? timeLeft(p.closes_at).text : p.state.toUpperCase()}</span>
         </div>
-        <p class="q">${esc(p.question)}</p>
+        <p class="q">${esc(p.said || p.question)}</p>
         <div class="blab">
           <span class="${p.side === 'yes' ? 'yl' : 'nl'}">${p.side.toUpperCase()} · ${p.stake} PTS</span>
           <span class="${settled ? (won ? 'yl' : 'nl') : ''}">${settled
@@ -449,7 +450,7 @@ function screenProfile(p, isSelf = true) {
       <div class="section" style="padding:0 0 2px"><h3>${isSelf ? 'Your' : 'Their'} posts</h3></div>
       ${posts.length ? posts.map(m => `
         <div class="post">
-          <p class="q">${esc(m.question)}</p>
+          <p class="q">${esc(m.said || m.question)}</p>
           <div class="blab">
             <span>${esc(m.category).toUpperCase()}</span>
             <span>${esc(m.state).toUpperCase()}${m.outcome ? ' · ' + esc(m.outcome) : ''}</span>
@@ -483,10 +484,27 @@ const I_COPY = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strok
   <rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg>`;
 
 function composeHtml() {
+  // Second step: the gate has read it and is stating the terms. Their words are
+  // what gets posted; this is only what it will be judged against.
+  if (S.draft2) {
+    return h`
+      <div class="sheet" id="sheet"><div class="sheetbox scroll">
+        <h2 style="text-align:left;font-size:20px">This is how it settles</h2>
+        <p class="sub" style="text-align:left;margin-bottom:14px">
+          Your post keeps your words. These are the terms it gets judged against.</p>
+        <p class="saidq">${esc(S.draft2.said)}</p>
+        ${termsHtml(S.draft2.terms)}
+        <div class="foot">
+          <button class="cta" id="dconfirm">Post it</button>
+          <button class="ghost" id="dback">Back, let me reword it</button>
+        </div>
+      </div></div>`;
+  }
+
   return h`
     <div class="sheet" id="sheet"><div class="sheetbox">
       <h2 style="text-align:left;font-size:20px">Make a call</h2>
-      <p class="sub" style="text-align:left">Write it however you like. It gets rewritten into something that can actually be settled.</p>
+      <p class="sub" style="text-align:left">Say it however you like — your words are what gets posted. We'll show you how it settles before it goes up.</p>
       ${S.gateError ? `<div class="err">${esc(S.gateError.reason)}</div>` : ''}
       ${S.gateError?.suggested_fix ? `
         <div class="fix">
@@ -526,22 +544,42 @@ function composeHtml() {
     </div></div>`;
 }
 
+// ---------- terms of resolution --------------------------------------------
+// The post keeps the author's own words. This is the contract underneath them:
+// the exact wording, the source, and what counts as YES or NO. Shown before you
+// post, and to anyone who opens the post afterwards.
+
+const when = iso => {
+  const d = new Date(iso);
+  return isNaN(d) ? '—' : d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+};
+
+function termsHtml(t) {
+  return `
+    <div class="terms">
+      <div class="tline"><s>Settles as</s><b>${esc(t.question)}</b></div>
+      <div class="tline"><s>Source</s><b>${esc(t.source_name)}</b>
+        ${t.source_detail ? `<em>${esc(t.source_detail)}</em>` : ''}</div>
+      <div class="tsplit">
+        <div class="tline y"><s>Counts as YES</s><b>${esc(t.criteria_yes)}</b></div>
+        <div class="tline n"><s>Counts as NO</s><b>${esc(t.criteria_no)}</b></div>
+      </div>
+      <div class="tsplit">
+        <div class="tline"><s>Betting closes</s><b>${when(t.closes_at)}</b></div>
+        <div class="tline"><s>Settles</s><b>${when(t.resolves_at)}</b></div>
+      </div>
+    </div>`;
+}
+
 // ---------- who's in -------------------------------------------------------
 
 /** The book, once you're part of it. Conviction is drawn relative to the
  *  loudest wager, so the shape reads without publishing anyone's balance. */
+/** Opening a post: their words at the top, the terms it settles against below,
+ *  and the book underneath — that last part only once you have a position. */
 function votersSheetHtml() {
   const v = S.voters;
-  if (v.locked) {
-    return h`
-      <div class="sheet" id="sheet"><div class="sheetbox">
-        <h2 style="text-align:left;font-size:20px">Pick a side first</h2>
-        <p class="sub" style="text-align:left;margin-bottom:8px">
-          Who's in and how hard they're in is for people with points on the line.
-          Take YES or NO and the book opens.</p>
-        <div class="foot"><button class="ghost" id="vclose">Close</button></div>
-      </div></div>`;
-  }
+  const m = v.market;
 
   const yes = v.list.filter(p => p.side === 'yes');
   const no = v.list.filter(p => p.side === 'no');
@@ -559,11 +597,22 @@ function votersSheetHtml() {
     </div>`;
 
   return h`
-    <div class="sheet" id="sheet"><div class="sheetbox">
-      <h2 style="text-align:left;font-size:20px">Who's in</h2>
-      <p class="sub" style="text-align:left;margin-bottom:14px">
-        ${v.list.length} call${v.list.length === 1 ? '' : 's'} · bar length is conviction, number is points staked.</p>
-      <div class="vcols">${col('YES', 'y', yes)}${col('NO', 'n', no)}</div>
+    <div class="sheet" id="sheet"><div class="sheetbox scroll">
+      <p class="saidq">${esc(m?.said || m?.question || '')}</p>
+      <p class="saidby">@${esc(m?.creator?.username || '')} · ${esc(m?.category || '')}</p>
+
+      <div class="tsec"><h4>How this settles</h4></div>
+      ${m ? termsHtml(m) : '<p class="vempty">Terms unavailable.</p>'}
+
+      <div class="tsec"><h4>Who's in</h4></div>
+      ${v.locked
+        ? `<p class="vempty" style="padding:2px 0 4px">
+             Who's in, and how hard, is for people with points on the line.
+             Take YES or NO and the book opens.</p>`
+        : `<p class="sub" style="text-align:left;margin-bottom:12px">
+             ${v.list.length} call${v.list.length === 1 ? '' : 's'} · bar length is conviction, number is points staked.</p>
+           <div class="vcols">${col('YES', 'y', yes)}${col('NO', 'n', no)}</div>`}
+
       <div class="foot"><button class="ghost" id="vclose">Close</button></div>
     </div></div>`;
 }
@@ -690,13 +739,16 @@ function bind() {
   on('.post[data-market]', 'click', async e => {
     if (e.target.closest('[data-stake],[data-wager],[data-viewuser],[data-share],[data-pay],button')) return;
     const id = Number(e.currentTarget.dataset.market);
+    // The terms are public — they are the contract everyone is wagering against.
+    // Only the book behind them is gated.
+    const market = S.markets.find(x => x.id === id) || await api(`/markets/${id}`).catch(() => null);
     try {
       const list = await api(`/markets/${id}/voters`);
-      S.voters = { marketId: id, list, locked: false };
+      S.voters = { marketId: id, market, list, locked: false };
     } catch (err) {
       // 403 is the rule working, not a failure: you have not taken a side yet.
       if (err.status !== 403) return alert(err.message);
-      S.voters = { marketId: id, list: [], locked: true };
+      S.voters = { marketId: id, market, list: [], locked: true };
     }
     render();
   });
@@ -725,7 +777,7 @@ function bind() {
   on('#compose', 'click', () => {
     S.composing = true; S.gateError = null;
     S.poolOpen = false; S.pool = { nim: '', winners: '' };
-    S.draft = '';
+    S.draft = ''; S.draft2 = null;
     render();
   });
   on('#ccancel', 'click', () => { S.composing = false; render(); });
@@ -780,13 +832,39 @@ function bind() {
       S.gateError = { reason: 'Say how much NIM each winner gets.' }; return render();
     }
 
-    e.currentTarget.disabled = true; e.currentTarget.textContent = 'Checking…';
+    e.currentTarget.disabled = true; e.currentTarget.textContent = 'Reading it…';
     try {
-      const r = await api('/markets', { method: 'POST', body: { text, tipNim, tipWinners } });
-      if (r.approved) { S.composing = false; S.gateError = null; S.draft = ''; }
+      // Nothing exists yet — this only asks the gate what the terms would be.
+      const r = await api('/markets/draft', { method: 'POST', body: { text } });
+      if (r.approved) { S.draft2 = r; S.gateError = null; }
       else S.gateError = r;
       render();
     } catch (err) { S.gateError = { reason: err.message }; render(); }
+  });
+
+  on('#dback', 'click', () => { S.draft2 = null; render(); });
+
+  on('#dconfirm', 'click', async e => {
+    e.currentTarget.disabled = true; e.currentTarget.textContent = 'Posting…';
+    try {
+      const r = await api('/markets', {
+        method: 'POST',
+        body: {
+          draftId: S.draft2.draftId,
+          tipNim: Number(S.pool.nim) || 0,
+          tipWinners: Number(S.pool.winners) || 0,
+        },
+      });
+      if (r.approved) {
+        S.composing = false; S.draft2 = null; S.gateError = null; S.draft = '';
+        S.pool = { nim: '', winners: '' }; S.poolOpen = false;
+      } else S.gateError = r;
+      render();
+    } catch (err) {
+      S.draft2 = null;
+      S.gateError = { reason: err.message };
+      render();
+    }
   });
 
   // Paying a tip pool: one transaction per winner, each approved in Nimiq Pay.

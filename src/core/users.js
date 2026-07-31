@@ -99,7 +99,7 @@ export function publicProfile(username) {
 
   // The calls this user made — not the positions they took on other people's.
   const posts = db.prepare(`
-    SELECT id, question, category, state, outcome, created_at
+    SELECT id, COALESCE(raw_text, question) AS said, question, category, state, outcome, created_at
     FROM markets WHERE creator_id = ? ORDER BY created_at DESC LIMIT 30`).all(u.id);
 
   return {

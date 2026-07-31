@@ -53,7 +53,8 @@ CREATE TABLE IF NOT EXISTS follows (
 CREATE TABLE IF NOT EXISTS markets (
   id            INTEGER PRIMARY KEY,
   creator_id    INTEGER NOT NULL REFERENCES users(id),
-  question      TEXT NOT NULL,
+  raw_text      TEXT,                        -- what the user actually said; the feed shows this
+  question      TEXT NOT NULL,               -- the tightened wording the resolver settles against
   category      TEXT NOT NULL,
   source_tier   TEXT NOT NULL,               -- auto | polymarket | declared
   source_name   TEXT NOT NULL,
@@ -157,6 +158,16 @@ CREATE TABLE IF NOT EXISTS sessions (
       ALTER TABLE tips_new RENAME TO tips;
       CREATE INDEX IF NOT EXISTS idx_tips_pending ON tips(verified, failed_reason);
     `);
+  }
+}
+
+// Markets used to store only the rewritten question. Older rows have nothing to
+// show as "what they said", so they fall back to the formal wording.
+{
+  const cols = db.prepare('PRAGMA table_info(markets)').all().map(c => c.name);
+  if (!cols.includes('raw_text')) {
+    db.exec('ALTER TABLE markets ADD COLUMN raw_text TEXT');
+    db.exec('UPDATE markets SET raw_text = question WHERE raw_text IS NULL');
   }
 }
 

@@ -26,7 +26,10 @@ export function scheduleFrom(verdict, nowMs = Date.now()) {
   };
 }
 
-export async function createMarket(user, rawText, { tipNim = 0, tipWinners = 0 } = {}) {
+/** `verdict` is supplied when the author already confirmed a draft — reusing it
+ *  means the terms they were shown are exactly the terms stored, and saves a
+ *  second trip through the gate. */
+export async function createMarket(user, rawText, { tipNim = 0, tipWinners = 0, verdict: preGated } = {}) {
   const today = new Date().toISOString().slice(0, 10);
   const made = db.prepare(
     "SELECT COUNT(*) n FROM markets WHERE creator_id = ? AND date(created_at) = ?"
@@ -35,7 +38,7 @@ export async function createMarket(user, rawText, { tipNim = 0, tipWinners = 0 }
     throw Object.assign(new Error('Daily market limit reached'), { status: 429 });
   }
 
-  const verdict = await gate(rawText);
+  const verdict = preGated ?? await gate(rawText);
   if (verdict.status !== 'approved') return { approved: false, ...verdict };
 
   const nowMs = Date.now();
@@ -50,13 +53,15 @@ export async function createMarket(user, rawText, { tipNim = 0, tipWinners = 0 }
 
   const now = new Date(nowMs).toISOString();
   const info = db.prepare(`
-    INSERT INTO markets (creator_id, question, category, source_tier, source_name,
+    INSERT INTO markets (creator_id, raw_text, question, category, source_tier, source_name,
       source_detail, criteria_yes, criteria_no, opens_at, closes_at, resolves_at,
       bounty_nim, bounty_winners)
-    VALUES (@creator_id,@question,@category,@source_tier,@source_name,@source_detail,
+    VALUES (@creator_id,@raw_text,@question,@category,@source_tier,@source_name,@source_detail,
       @criteria_yes,@criteria_no,@opens_at,@closes_at,@resolves_at,@bounty_nim,@bounty_winners)
   `).run({
     creator_id: user.id,
+    // Kept verbatim. The feed is people talking, not a contract being read aloud.
+    raw_text: String(rawText).trim(),
     question: verdict.question,
     category: verdict.category,
     source_tier: verdict.source_tier,
@@ -131,8 +136,12 @@ export function viewMarket(marketId, user) {
 
   const base = {
     id: m.id,
+    // What they said, and what it will actually be settled against. The feed
+    // shows the first; the terms sheet shows the second.
+    said: m.raw_text || m.question,
     question: m.question,
     category: m.category,
+    source_tier: m.source_tier,
     source_name: m.source_name,
     source_detail: m.source_detail,
     criteria_yes: m.criteria_yes,
@@ -217,7 +226,7 @@ export function settleMarket(marketId, outcome, log) {
  *  as opposed to the calls they authored (see users.js publicProfile.posts). */
 export function myPositions(userId, limit = 50) {
   return db.prepare(`
-    SELECT m.id, m.question, m.category, m.state, m.outcome, m.closes_at,
+    SELECT m.id, COALESCE(m.raw_text, m.question) AS said, m.question, m.category, m.state, m.outcome, m.closes_at,
            w.side, w.stake, w.settled, w.rep_delta
     FROM wagers w JOIN markets m ON m.id = w.market_id
     WHERE w.user_id = ?

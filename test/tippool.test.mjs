@@ -160,6 +160,31 @@ const after = (await j('GET', '/api/payouts', null, author.token)).body;
 is(after.length === 1, 'and it drops off what the author still owes');
 is(after[0].id !== target.id, 'the one still owed is the other winner');
 
+// ---- the post keeps the author's own words ---------------------------------
+// The feed is people talking; the tightened wording is only what it settles
+// against. Both are stored, and confirming a draft must not swap one for the other.
+{
+  const { createMarket, viewMarket } = await import('../src/core/markets.js');
+  const verdict = {
+    status: 'approved',
+    question: 'Will BTC/USD spot on Coinbase be higher at close than at open?',
+    category: 'crypto', source_tier: 'auto', source_name: 'Coinbase',
+    source_detail: 'spot at open vs resolve', criteria_yes: 'higher', criteria_no: 'not higher',
+    closes_in_minutes: 60, resolves_in_minutes: 75,
+  };
+  const said = 'good morning, what do you reckon btc does in the next hour?';
+  const out = await createMarket({ id: 1, rep: 0, points: 100 }, said, { verdict });
+
+  is(out.approved, 'a pre-gated draft creates without calling the gate again');
+  is(out.market.raw_text === said, 'the post stores exactly what the author typed');
+  is(out.market.question === verdict.question, 'and the tightened wording it settles against');
+
+  const view = viewMarket(out.market.id, null);
+  is(view.said === said, 'the feed is served the words the author actually typed');
+  is(view.criteria_yes === 'higher' && view.criteria_no === 'not higher',
+     'and the terms travel with it so a post can show how it settles');
+}
+
 console.log(fails ? `\n${fails} FAILED` : '\nall green');
 srv.close();
 process.exit(fails ? 1 : 0);

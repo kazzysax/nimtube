@@ -1,4 +1,5 @@
 import express from 'express';
+import { randomUUID } from 'crypto';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { db } from './core/db.js';
@@ -6,7 +7,8 @@ import {
   findOrCreate, issueSession, userForToken, claimAllowance,
   publicProfile, usernameAvailable,
 } from './core/users.js';
-import { createMarket, placeWager, viewMarket, feed, myPositions } from './core/markets.js';
+import { createMarket, placeWager, viewMarket, feed, myPositions, scheduleFrom } from './core/markets.js';
+import { gate as gateText } from './core/terminal.js';
 import { issueChallenge, verifyChallenge, devBypassAllowed } from './core/auth.js';
 import { getAccountByAddress } from './core/rpc.js';
 import * as resolverJob from './jobs/resolver.js';
@@ -105,14 +107,67 @@ app.get('/api/markets/:id', wrap((req, res) => {
   res.json(m);
 }));
 
+/** Step one of posting: run the gate and show the author how their words will be
+ *  settled, before anything exists. The verdict is held here rather than handed
+ *  to the client — otherwise the terms they confirmed and the terms stored could
+ *  differ by whatever the client felt like sending back. */
+const drafts = new Map();
+const DRAFT_TTL_MS = 15 * 60_000;
+
+const reapDrafts = () => {
+  const cutoff = Date.now() - DRAFT_TTL_MS;
+  for (const [id, d] of drafts) if (d.at < cutoff) drafts.delete(id);
+};
+
+app.post('/api/markets/draft', wrap(async (req, res) => {
+  if (!need(req, res)) return;
+  const { text } = req.body || {};
+  if (!text || text.length < 5) throw Object.assign(new Error('Say more'), { status: 400 });
+
+  reapDrafts();
+  const verdict = await gateText(text);
+  if (verdict.status !== 'approved') return res.json({ approved: false, ...verdict });
+
+  const when = scheduleFrom(verdict);
+  if (!when) {
+    return res.json({
+      approved: false,
+      reason: 'That needs a deadline between 5 minutes and 7 days away. Say when it settles.',
+      suggested_fix: null,
+    });
+  }
+
+  const id = randomUUID();
+  drafts.set(id, { at: Date.now(), userId: req.user.id, text, verdict });
+
+  res.json({
+    approved: true,
+    draftId: id,
+    said: text,
+    terms: {
+      question: verdict.question,
+      category: verdict.category,
+      source_tier: verdict.source_tier,
+      source_name: verdict.source_name,
+      source_detail: verdict.source_detail,
+      criteria_yes: verdict.criteria_yes,
+      criteria_no: verdict.criteria_no,
+      closes_at: when.closes_at,
+      resolves_at: when.resolves_at,
+    },
+  });
+}));
+
 /** Posts are the markets. Everything goes through the gate before it exists. */
 app.post('/api/markets', wrap(async (req, res) => {
   if (!need(req, res)) return;
-  const { text } = req.body || {};
+  const { text, draftId } = req.body || {};
   const tipNim = Number(req.body?.tipNim) || 0;
   const tipWinners = Number(req.body?.tipWinners) || 0;
 
-  if (!text || text.length < 5) throw Object.assign(new Error('Say more'), { status: 400 });
+  if (!draftId && (!text || text.length < 5)) {
+    throw Object.assign(new Error('Say more'), { status: 400 });
+  }
   if (tipNim < 0 || tipWinners < 0) {
     throw Object.assign(new Error('A tip cannot be negative'), { status: 400 });
   }
@@ -125,7 +180,19 @@ app.post('/api/markets', wrap(async (req, res) => {
   if (tipWinners > MAX_TIP_WINNERS) {
     throw Object.assign(new Error(`A tip can name at most ${MAX_TIP_WINNERS} people`), { status: 400 });
   }
-  const out = await createMarket(req.user, text, { tipNim, tipWinners });
+  // Confirming a draft reuses the verdict the author was actually shown, so the
+  // terms they agreed to are the terms stored. No second gate call either.
+  let out;
+  if (draftId) {
+    const d = drafts.get(draftId);
+    if (!d || d.userId !== req.user.id) {
+      throw Object.assign(new Error('That draft expired. Post it again.'), { status: 410 });
+    }
+    drafts.delete(draftId);
+    out = await createMarket(req.user, d.text, { tipNim, tipWinners, verdict: d.verdict });
+  } else {
+    out = await createMarket(req.user, text, { tipNim, tipWinners });
+  }
   res.status(out.approved ? 201 : 200).json(out);
 }));
 
