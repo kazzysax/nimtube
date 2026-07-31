@@ -39,10 +39,14 @@ db.prepare(`INSERT INTO markets (id,creator_id,question,category,source_tier,sou
   'crypto','auto','CoinGecko','BTC/USD daily close','close > 120000','close <= 120000',?,?,?)`)
   .run(now.toISOString(),close.toISOString(),res_.toISOString());
 
-// bar is hidden before five wagers
+// an untouched market opens at 50/50
 r=await j('GET','/api/markets/1',null,toks.chidi);
-is(r.body.bar===null,'bar hidden below 5 wagers');
+is(r.body.bar===50,'a market with no calls opens at 50/50');
 is(r.body.committed===false,'not committed yet');
+
+// and the book is shut to anyone who has not taken a side
+r=await j('GET','/api/markets/1/voters',null,toks.chidi);
+is(r.status===403&&/pick a side/i.test(r.body.error),'the book is closed until you have a position in it');
 
 // wagers: one long shot on yes, five on no
 await j('POST','/api/markets/1/wager',{side:'yes',stake:2},toks.chidi);
@@ -56,11 +60,19 @@ is(r.status===409,'second wager on the same market is refused');
 r=await j('GET','/api/me',null,toks.chidi);
 is(r.body.points===23,'stake deducted from balance');
 
-// bar now visible and leaning heavily to no
+// bar leaning heavily to no now the book is deep enough to say so
 r=await j('GET','/api/markets/1',null,toks.chidi);
 is(typeof r.body.bar==='number','bar visible at 6 wagers');
-is(r.body.bar<=15,'bar reflects the lopsided book ('+r.body.bar+'% yes)');
+is(r.body.bar<=25,'bar reflects the lopsided book ('+r.body.bar+'% yes)');
 is(r.body.committed===true&&r.body.mySide==='yes','own side visible after committing');
+
+// having taken a side, the book opens
+r=await j('GET','/api/markets/1/voters',null,toks.chidi);
+is(r.status===200&&r.body.length===6,'a committed user sees every call on the market');
+const meRow=r.body.find(p=>p.isMe);
+is(meRow&&meRow.side==='yes'&&meRow.stake===2,'their own call is marked and carries the stake');
+is(r.body.every(p=>p.conviction>=0&&p.conviction<=100),'conviction is relative, never a raw balance');
+is(r.body.every(p=>p.points===undefined),'nobody else\'s point balance leaks through');
 
 // settle: the long shot was right
 const out=settleMarket(1,'YES',{evidence:'test'});

@@ -1,8 +1,30 @@
 import { db } from './db.js';
-import { rawWeight, bar, sideTotals, settle, MIN_WAGERS_FOR_BAR } from './math.js';
+import { rawWeight, bar, sideTotals, settle, MIN_WAGERS_FOR_CAP } from './math.js';
 import { gate } from './terminal.js';
 
 const MAX_MARKETS_PER_DAY = 5;
+const MIN_OPEN_MINUTES = 5;
+const MAX_OPEN_MINUTES = 7 * 24 * 60;
+
+/** The gate returns durations, not timestamps — models are unreliable at date
+ *  arithmetic, and getting it wrong either buries a market a week out or, worse,
+ *  opens one that is already past its close and settles on the resolver's next
+ *  tick. The clock is applied here, where it is exact.
+ *
+ *  Out-of-range durations are refused rather than clamped: people wager
+ *  reputation against these times, so a deadline nobody chose is not a fix. */
+export function scheduleFrom(verdict, nowMs = Date.now()) {
+  const open = Number(verdict.closes_in_minutes);
+  const settle = Number(verdict.resolves_in_minutes ?? open);
+
+  if (!Number.isFinite(open) || open < MIN_OPEN_MINUTES || open > MAX_OPEN_MINUTES) return null;
+  if (!Number.isFinite(settle) || settle < open) return null;
+
+  return {
+    closes_at: new Date(nowMs + Math.round(open) * 60_000).toISOString(),
+    resolves_at: new Date(nowMs + Math.round(settle) * 60_000).toISOString(),
+  };
+}
 
 export async function createMarket(user, rawText, { tipNim = 0, tipWinners = 0 } = {}) {
   const today = new Date().toISOString().slice(0, 10);
@@ -16,7 +38,17 @@ export async function createMarket(user, rawText, { tipNim = 0, tipWinners = 0 }
   const verdict = await gate(rawText);
   if (verdict.status !== 'approved') return { approved: false, ...verdict };
 
-  const now = new Date().toISOString();
+  const nowMs = Date.now();
+  const when = scheduleFrom(verdict, nowMs);
+  if (!when) {
+    return {
+      approved: false,
+      reason: 'That needs a deadline between 5 minutes and 7 days away. Say when it settles.',
+      suggested_fix: null,
+    };
+  }
+
+  const now = new Date(nowMs).toISOString();
   const info = db.prepare(`
     INSERT INTO markets (creator_id, question, category, source_tier, source_name,
       source_detail, criteria_yes, criteria_no, opens_at, closes_at, resolves_at,
@@ -33,8 +65,8 @@ export async function createMarket(user, rawText, { tipNim = 0, tipWinners = 0 }
     criteria_yes: verdict.criteria_yes,
     criteria_no: verdict.criteria_no,
     opens_at: now,
-    closes_at: verdict.closes_at,
-    resolves_at: verdict.resolves_at,
+    closes_at: when.closes_at,
+    resolves_at: when.resolves_at,
     bounty_nim: tipNim,
     bounty_winners: tipWinners,
   });
@@ -111,7 +143,7 @@ export function viewMarket(marketId, user) {
     // Stored in the bounty_* columns for historical reasons; surfaced as what it
     // now is — a tip the author pays to the top scorers when this settles.
     tipPool: m.bounty_nim > 0 ? { nim: m.bounty_nim, winners: m.bounty_winners } : null,
-    bar: bar(ws),                    // null until 5 wagers exist
+    bar: bar(ws),                    // always shown; starts at 50 and is damped early
     wagerCount: ws.length,
     committed: !!mine,
     mySide: mine ? mine.side : null,
@@ -209,4 +241,4 @@ export function feed({ user, category, state = 'open', limit = 30 }) {
   });
 }
 
-export { MIN_WAGERS_FOR_BAR };
+export { MIN_WAGERS_FOR_CAP };

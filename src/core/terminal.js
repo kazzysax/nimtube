@@ -78,8 +78,21 @@ RULES
 - Reject anything whose outcome could be influenced by users of this app.
 - Betting must close BEFORE the outcome becomes knowable. If the event is live
   or already underway, reject.
-- resolves_at must be after the source publishes, with slack for delay.
-- closes_at must be no more than 7 days after now. Longer markets kill the feed.
+- Express timing as DURATIONS IN MINUTES from current_time. Do NOT compute dates
+  or timestamps yourself — the server applies the clock.
+    closes_in_minutes    how long betting stays open
+    resolves_in_minutes  when the source can be checked; >= closes_in_minutes,
+                         with slack for the source to publish
+- Take the horizon the user gave you literally and convert it exactly:
+    "in an hour" -> 60          "in 30 minutes" -> 30
+    "today"/"tonight" -> minutes until their local midnight
+    "tomorrow" -> minutes until the end of their tomorrow
+    "in two days" -> 2880       "this week" -> minutes until Sunday midnight
+  If they named a horizon, closes_in_minutes MUST match it. Never shorten a
+  two-day question into hours, and never round a one-hour question down to zero.
+  If they named none, choose the shortest horizon the source supports.
+- closes_in_minutes must be between 5 and 10080 (7 days). Longer markets kill
+  the feed.
 - Rewrite freely. Users write loosely; you tighten. Keep their intent.
 
 WHEN YOU REJECT
@@ -92,7 +105,7 @@ Short. Plain. No lecturing. One sentence of reason, then the fix.
 Return ONLY JSON, no preamble, no markdown fences:
 {"status":"approved","question":"","category":"","source_tier":"auto|polymarket|declared",
  "source_name":"","source_detail":"","criteria_yes":"","criteria_no":"",
- "closes_at":"ISO8601","resolves_at":"ISO8601"}
+ "closes_in_minutes":0,"resolves_in_minutes":0}
 or
 {"status":"rejected","reason":"","suggested_fix":{ ...same fields as approved, or null }}`;
 

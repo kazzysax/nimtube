@@ -2,7 +2,7 @@ import * as wallet from './nimiq.js';
 
 const CATEGORIES = ['Crypto', 'Football', 'Politics', 'Music', 'Weather', 'AI'];
 const STAKES = [1, 3, 5, 10, 20];
-const REVEAL_AT = 5;                 // wagers needed before the bar is readable
+const PRIOR_WAGERS = 3;              // below this the bar is still mostly its 50/50 prior
 
 const S = {
   token: localStorage.getItem('predtube.token'),
@@ -23,6 +23,7 @@ const S = {
   pool: { nim: '', winners: '' },
   draft: '',
   owed: [],
+  voters: null,
 };
 
 const el = document.getElementById('app');
@@ -123,16 +124,16 @@ function screenFollow(people) {
 // ---------- feed ----------------------------------------------------------
 
 function barHtml(m) {
-  // Blind until committed: the bar is the one public statistic, and it carries
-  // no numbers. Before five wagers there isn't one to show at all.
-  if (m.bar === null || m.bar === undefined) {
-    const left = Math.max(1, REVEAL_AT - m.wagerCount);
-    return `<div class="bar blind"><u style="width:100%"></u></div>
-            <div class="blab"><span class="warm">WARMING UP</span>
-              <span>${left} MORE CALL${left === 1 ? '' : 'S'} TO REVEAL</span></div>`;
-  }
+  // The bar is the one public statistic and it carries no numbers. Every market
+  // opens at 50/50; early calls barely move it, so a thin book reads as thin
+  // rather than as a landslide.
+  const settling = m.wagerCount < PRIOR_WAGERS;
   return `<div class="bar"><u class="y" style="width:${m.bar}%"></u><u class="n" style="width:${100 - m.bar}%"></u></div>
-          <div class="blab"><span class="yl">YES</span><span class="nl">NO</span></div>`;
+          <div class="blab">
+            <span class="yl">YES</span>
+            ${settling ? `<span class="warm">${m.wagerCount || 'NO'} CALL${m.wagerCount === 1 ? '' : 'S'} IN · STILL SETTLING</span>` : ''}
+            <span class="nl">NO</span>
+          </div>`;
 }
 
 function postHtml(m) {
@@ -180,7 +181,7 @@ function resolvedHtml(m) {
   const yes = m.finalBar ?? 50;
   const d = m.myRepDelta;
   return h`
-    <div class="post"><span class="stamp">Resolved</span>
+    <div class="post" data-market="${m.id}"><span class="stamp">Resolved</span>
       <div class="ph"><span class="av"></span><b data-viewuser="${esc(m.creator?.username || '')}">@${esc(m.creator?.username || '')}</b>
         <span class="rp">${m.creator?.rep ?? 0}</span></div>
       <p class="q">${esc(m.question)}</p>
@@ -466,6 +467,48 @@ function composeHtml() {
     </div></div>`;
 }
 
+// ---------- who's in -------------------------------------------------------
+
+/** The book, once you're part of it. Conviction is drawn relative to the
+ *  loudest wager, so the shape reads without publishing anyone's balance. */
+function votersSheetHtml() {
+  const v = S.voters;
+  if (v.locked) {
+    return h`
+      <div class="sheet" id="sheet"><div class="sheetbox">
+        <h2 style="text-align:left;font-size:20px">Pick a side first</h2>
+        <p class="sub" style="text-align:left;margin-bottom:8px">
+          Who's in and how hard they're in is for people with points on the line.
+          Take YES or NO and the book opens.</p>
+        <div class="foot"><button class="ghost" id="vclose">Close</button></div>
+      </div></div>`;
+  }
+
+  const yes = v.list.filter(p => p.side === 'yes');
+  const no = v.list.filter(p => p.side === 'no');
+  const col = (label, cls, people) => `
+    <div class="vcol">
+      <h4 class="${cls}">${label} · ${people.length}</h4>
+      ${people.length ? people.map(p => `
+        <div class="vrow ${p.isMe ? 'me' : ''}">
+          <span class="vname" data-viewuser="${esc(p.username)}">@${esc(p.username)}</span>
+          ${p.isMe ? '<i class="vme">you</i>' : ''}
+          <span class="vbar"><u class="${cls}" style="width:${p.conviction}%"></u></span>
+          <span class="vstake">${p.stake}</span>
+        </div>`).join('')
+        : '<p class="vempty">Nobody yet.</p>'}
+    </div>`;
+
+  return h`
+    <div class="sheet" id="sheet"><div class="sheetbox">
+      <h2 style="text-align:left;font-size:20px">Who's in</h2>
+      <p class="sub" style="text-align:left;margin-bottom:14px">
+        ${v.list.length} call${v.list.length === 1 ? '' : 's'} · bar length is conviction, number is points staked.</p>
+      <div class="vcols">${col('YES', 'y', yes)}${col('NO', 'n', no)}</div>
+      <div class="foot"><button class="ghost" id="vclose">Close</button></div>
+    </div></div>`;
+}
+
 // ---------- tipping --------------------------------------------------------
 
 function tipSheetHtml() {
@@ -520,6 +563,7 @@ async function render() {
   }
   if (S.composing) el.insertAdjacentHTML('beforeend', composeHtml());
   if (S.tipTarget) el.insertAdjacentHTML('beforeend', tipSheetHtml());
+  if (S.voters) el.insertAdjacentHTML('beforeend', votersSheetHtml());
   bind();
 }
 
@@ -581,6 +625,23 @@ function bind() {
     S.tab = 'profile'; S.viewUser = u; render();
   });
   on('[data-back]', 'click', () => { S.viewUser = null; render(); });
+
+  // Opening a post shows its book. Clicks that landed on something interactive
+  // inside the card belong to that control, not to the card.
+  on('.post[data-market]', 'click', async e => {
+    if (e.target.closest('[data-stake],[data-wager],[data-viewuser],[data-share],[data-pay],button')) return;
+    const id = Number(e.currentTarget.dataset.market);
+    try {
+      const list = await api(`/markets/${id}/voters`);
+      S.voters = { marketId: id, list, locked: false };
+    } catch (err) {
+      // 403 is the rule working, not a failure: you have not taken a side yet.
+      if (err.status !== 403) return alert(err.message);
+      S.voters = { marketId: id, list: [], locked: true };
+    }
+    render();
+  });
+  on('#vclose', 'click', () => { S.voters = null; render(); });
 
   on('[data-tab]', 'click', e => { S.viewUser = null; S.tab = e.currentTarget.dataset.tab; render(); });
   on('#wallettip', 'click', () => { S.tipTarget = { username: '', locked: false, amount: '', sending: false, error: null }; render(); });

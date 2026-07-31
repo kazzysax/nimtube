@@ -1,6 +1,6 @@
 // The whole economy lives here. Nothing else computes weight, bar, or rep.
 
-export const MIN_WAGERS_FOR_BAR = 5;   // bar hidden below this
+export const MIN_WAGERS_FOR_CAP = 5;   // below this the 25% cap is unsatisfiable
 export const SINGLE_WAGER_CAP = 0.25;  // no wager may exceed 25% of total weight
 
 /** rep factor: 1 + rep/100, floored at 1x, capped at 2x.
@@ -27,11 +27,11 @@ export function rawWeight({ stake, rep, now, opensAt, closesAt }) {
  *  one third of everyone else's weight combined.
  *
  *  Below 5 wagers the cap is mathematically unsatisfiable — 4 equal wagers are 25%
- *  each, and forcing them lower collapses every weight to zero. So it only binds
- *  once the bar is visible anyway. */
+ *  each, and forcing them lower collapses every weight to zero. Early on the bar's
+ *  prior is doing the damping instead. */
 export function applyCap(weights) {
   const n = weights.length;
-  if (n < MIN_WAGERS_FOR_BAR) return weights.slice();
+  if (n < MIN_WAGERS_FOR_CAP) return weights.slice();
 
   let v = weights.slice();
   for (let i = 0; i < 200; i++) {
@@ -58,13 +58,30 @@ export function sideTotals(wagers) {
   return { yes, no, total: yes + no, capped };
 }
 
-/** Bar: share of weight on yes, rounded to the nearest 5%.
- *  Returns null when there aren't enough wagers to show it. */
+/** Every market opens at 50/50 and is pulled from there by the weight on each
+ *  side. The pull is damped by a prior worth PRIOR_WAGERS wagers sitting evenly
+ *  on both sides, so one loud early caller cannot swing the bar to an extreme it
+ *  has not earned. Once more than PRIOR_WAGERS people have taken sides the prior
+ *  is a minority of the weight and the bar reads as the real book.
+ *
+ *  The prior is display only — settlement uses sideTotals directly, so nobody's
+ *  reputation is scored against a number that was partly invented. */
+export const PRIOR_WAGERS = 3;
+
 export function bar(wagers) {
-  if (wagers.length < MIN_WAGERS_FOR_BAR) return null;
   const { yes, total } = sideTotals(wagers);
-  if (total <= 0) return null;
-  return Math.round((yes / total) * 20) * 5;
+
+  // A prior wager weighs the same as the average real one, so the damping keeps
+  // its strength whether people are staking 1 point or 20.
+  const unit = total > 0 ? total / wagers.length : 1;
+  const prior = PRIOR_WAGERS * unit;
+
+  const share = (yes + prior / 2) / (total + prior);
+
+  // Round the distance from 50, not the share itself, so a lone YES and a lone
+  // NO move the bar by the same amount instead of one of them winning the tie.
+  const dev = share - 0.5;
+  return 50 + Math.sign(dev) * Math.round(Math.abs(dev) * 20) * 5;
 }
 
 /** Reputation band, keyed on the winning-or-losing side's share of total weight.

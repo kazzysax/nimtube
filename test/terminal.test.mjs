@@ -19,11 +19,15 @@ globalThis.__next = JSON.stringify({
   category: 'crypto', source_tier: 'auto', source_name: 'CoinGecko',
   source_detail: 'BTC/USD daily close', criteria_yes: 'close > 120000',
   criteria_no: 'close <= 120000',
-  closes_at: '2026-08-31T00:00:00Z', resolves_at: '2026-09-01T02:00:00Z',
+  closes_in_minutes: 2880, resolves_in_minutes: 2940,
 });
 let r = await gate('will bitcoin pump this month');
 is(r.status === 'approved', 'gate: parses an approval');
 is(r.source_tier === 'auto', 'gate: keeps the source tier');
+is(r.closes_in_minutes === 2880, 'gate: returns a duration, not a date it computed itself');
+is(lastBody.system.includes('DURATIONS IN MINUTES'), 'gate: is told to hand back durations');
+is(lastBody.system.includes('"in two days" -> 2880'),
+   'gate: is shown the conversion, since it kept turning two days into two hours');
 is(lastBody.system.includes('If this event had already happened'), 'gate: ships the core test in the system prompt');
 is(lastBody.system.includes('polymarket'), 'gate: offers the polymarket source tier');
 is(!lastBody.tools, 'gate: no web search at creation time');

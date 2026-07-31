@@ -135,6 +135,43 @@ app.post('/api/markets/:id/wager', wrap((req, res) => {
   res.json(placeWager(req.user, Number(req.params.id), side, Number(stake)));
 }));
 
+/** Who took which side, and how hard. Reading the book costs you a position in
+ *  it: you only see this once your own points are on the line, so nobody can
+ *  farm everyone else's conviction without ever showing their own. */
+app.get('/api/markets/:id/voters', wrap((req, res) => {
+  if (!need(req, res)) return;
+  const id = Number(req.params.id);
+
+  const market = db.prepare('SELECT id FROM markets WHERE id = ?').get(id);
+  if (!market) return res.status(404).json({ error: 'No such market' });
+
+  const mine = db.prepare('SELECT 1 FROM wagers WHERE market_id = ? AND user_id = ?').get(id, req.user.id);
+  if (!mine) {
+    return res.status(403).json({ error: 'Pick a side to see who else is in' });
+  }
+
+  const rows = db.prepare(`
+    SELECT u.username, u.rep, w.side, w.stake, w.weight, w.placed_at, w.rep_delta, w.settled
+    FROM wagers w JOIN users u ON u.id = w.user_id
+    WHERE w.market_id = ?
+    ORDER BY w.weight DESC, w.placed_at ASC
+  `).all(id);
+
+  // Conviction is shown relative to the loudest voice in the room, so the shape
+  // of the book reads at a glance without publishing anyone's balance.
+  const loudest = rows.reduce((n, r) => Math.max(n, r.weight), 0) || 1;
+  res.json(rows.map(r => ({
+    username: r.username,
+    rep: r.rep,
+    side: r.side,
+    stake: r.stake,
+    conviction: Math.round((r.weight / loudest) * 100),
+    settled: !!r.settled,
+    rep_delta: r.rep_delta,
+    isMe: r.username === req.user.username,
+  })));
+}));
+
 /** The wagers I've placed on other people's calls — my side of the book. */
 app.get('/api/positions', wrap((req, res) => {
   if (!need(req, res)) return;

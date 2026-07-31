@@ -247,6 +247,23 @@ textarea{width:100%;min-height:110px;background:var(--card);border:1px solid var
 .poolbody input{padding:11px 12px;font-size:14px;border-radius:11px}
 .poolnote{font-size:11px;color:var(--dimmer);line-height:1.5;padding:9px 14px 13px}
 
+/* who's in — the book, once you have a position in it */
+.post[data-market]{cursor:pointer}
+.vcols{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.vcol h4{font-family:var(--mono);font-size:9px;letter-spacing:.14em;text-transform:uppercase;margin-bottom:9px}
+.vcol h4.y{color:var(--yes)}.vcol h4.n{color:var(--no)}
+.vrow{display:flex;align-items:center;gap:7px;margin-bottom:8px}
+.vname{flex:1 1 auto;min-width:0;max-width:10ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-family:var(--mono);font-size:10.5px;color:var(--dim);cursor:pointer}
+.vrow.me .vname{color:var(--ink)}
+.vme{flex:0 0 auto;font-style:normal;font-family:var(--mono);font-size:7.5px;letter-spacing:.1em;
+  text-transform:uppercase;color:var(--blue);background:rgba(61,139,255,.12);padding:2px 4px;border-radius:4px}
+.vbar{flex:1 1 40%;min-width:24px;height:6px;border-radius:3px;background:rgba(255,255,255,.05);overflow:hidden}
+.vbar u{display:block;height:100%;text-decoration:none;border-radius:3px}
+.vbar u.y{background:var(--yes)}.vbar u.n{background:var(--no)}
+.vstake{flex:0 0 auto;font-family:var(--mono);font-size:10.5px;color:var(--dimmer);min-width:2ch;text-align:right}
+.vempty{font-size:11.5px;color:var(--dimmer);padding:4px 0}
+
 [data-viewuser]{cursor:pointer}
 .row[data-viewuser]:active{background:var(--card2)}
 .backbtn{font-family:var(--display);font-size:22px;line-height:1;color:var(--dim);cursor:pointer;padding:2px 4px 2px 0}
