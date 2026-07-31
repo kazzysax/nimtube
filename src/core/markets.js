@@ -179,7 +179,7 @@ export function settleMarket(marketId, outcome, log) {
   const voidIt = (reason) => db.transaction(() => {
     for (const w of ws) {
       db.prepare('UPDATE users SET points = points + ? WHERE id = ?').run(w.stake, w.userId);
-      db.prepare('UPDATE wagers SET settled = 1, rep_delta = 0 WHERE id = ?').run(w.id);
+      db.prepare("UPDATE wagers SET settled = 1, rep_delta = 0, settled_at = datetime('now') WHERE id = ?").run(w.id);
     }
     db.prepare(`UPDATE markets SET state='void', void_reason=?, resolution_log=? WHERE id=?`)
       .run(reason, JSON.stringify(log || {}), marketId);
@@ -192,7 +192,7 @@ export function settleMarket(marketId, outcome, log) {
 
   db.transaction(() => {
     for (const r of result.results) {
-      db.prepare('UPDATE wagers SET settled = 1, rep_delta = ? WHERE id = ?')
+      db.prepare("UPDATE wagers SET settled = 1, rep_delta = ?, settled_at = datetime('now') WHERE id = ?")
         .run(r.repDelta, r.wagerId);
       db.prepare('UPDATE users SET points = points + ?, rep = rep + ? WHERE id = ?')
         .run(r.refund, r.repDelta, r.userId);

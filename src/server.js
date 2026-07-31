@@ -5,7 +5,7 @@ import { dirname, join } from 'path';
 import { db } from './core/db.js';
 import {
   findOrCreate, issueSession, userForToken, claimAllowance,
-  publicProfile, usernameAvailable, fold,
+  publicProfile, usernameAvailable, fold, DAILY_POINTS,
 } from './core/users.js';
 import { createMarket, placeWager, viewMarket, feed, myPositions, scheduleFrom } from './core/markets.js';
 import { gate as gateText } from './core/terminal.js';
@@ -75,11 +75,9 @@ app.post('/api/session', wrap((req, res) => {
 
   const user = findOrCreate({ address: proven, username, deviceHash, avatar });
   const token = issueSession(user.id);
-  const allowance = claimAllowance(user);
   res.json({
     token,
-    user: { username: user.username, rep: user.rep, points: allowance.points, avatar: user.avatar },
-    dailyClaimed: allowance.claimed,
+    user: { username: user.username, rep: user.rep, points: user.points, avatar: user.avatar },
   });
 }));
 
@@ -89,6 +87,51 @@ app.get('/api/me', wrap((req, res) => {
   if (!need(req, res)) return;
   const u = db.prepare('SELECT username, rep, points, avatar FROM users WHERE id = ?').get(req.user.id);
   res.json(u);
+}));
+
+// ---- what happened while you were away -------------------------------------
+
+/** Results land while you are not looking, so they wait at the top of the feed
+ *  until you have actually seen them. Voids are reported too — a refund with no
+ *  explanation looks like a bug. */
+app.get('/api/digest', wrap((req, res) => {
+  if (!need(req, res)) return;
+
+  const results = db.prepare(`
+    SELECT m.id AS market_id, COALESCE(m.raw_text, m.question) AS said,
+           m.outcome, m.state, m.void_reason,
+           w.side, w.stake, w.rep_delta
+    FROM wagers w JOIN markets m ON m.id = w.market_id
+    WHERE w.user_id = ? AND w.settled = 1
+      AND w.settled_at IS NOT NULL
+      AND (? IS NULL OR w.settled_at > ?)
+    ORDER BY w.settled_at DESC LIMIT 20
+  `).all(req.user.id, req.user.results_seen_at, req.user.results_seen_at)
+    .map(r => ({
+      ...r,
+      won: r.state === 'resolved' && !!r.outcome && r.side === r.outcome.toLowerCase(),
+      voided: r.state === 'void',
+    }));
+
+  const today = new Date().toISOString().slice(0, 10);
+  res.json({
+    results,
+    daily: { available: req.user.last_allowance !== today, amount: DAILY_POINTS },
+  });
+}));
+
+/** Acknowledge results. Anything settling after this moment queues up again. */
+app.post('/api/digest/seen', wrap((req, res) => {
+  if (!need(req, res)) return;
+  db.prepare("UPDATE users SET results_seen_at = datetime('now') WHERE id = ?").run(req.user.id);
+  res.json({ ok: true });
+}));
+
+/** The daily 5. Idempotent per calendar day — claiming twice does nothing. */
+app.post('/api/daily', wrap((req, res) => {
+  if (!need(req, res)) return;
+  const out = claimAllowance(req.user);
+  res.json({ claimed: out.claimed, points: out.points });
 }));
 
 // ---- markets -------------------------------------------------------------

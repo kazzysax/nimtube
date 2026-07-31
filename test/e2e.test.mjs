@@ -15,7 +15,17 @@ is(r.body.needsUsername===true,'new address is asked for a username');
 
 r=await j('POST','/api/session',{address:'NQ11 AAAA',username:'chidi',deviceHash:'d1'});
 const chidi=r.body.token;
-is(r.body.user.points===25,'new user gets 20 + 5 daily on first session');
+is(r.body.user.points===20,'new user gets 20 on sign-up, daily is a separate claim');
+
+// the daily 5 waits in the digest until claimed, and cannot be claimed twice
+r=await j('GET','/api/digest',null,chidi);
+is(r.body.daily.available===true&&r.body.daily.amount===5,'the digest offers the unclaimed daily 5');
+r=await j('POST','/api/daily',null,chidi);
+is(r.body.claimed===5&&r.body.points===25,'claiming it adds 5 points');
+r=await j('POST','/api/daily',null,chidi);
+is(r.body.claimed===0&&r.body.points===25,'claiming twice in a day does nothing');
+r=await j('GET','/api/digest',null,chidi);
+is(r.body.daily.available===false,'and the digest stops offering it once claimed');
 
 // lookalike impersonation is blocked
 r=await j('GET','/api/username/chidl');   // l for i
@@ -90,7 +100,7 @@ is(chidiRow.rep===5,'long shot correct -> +5 rep (got '+chidiRow.rep+')');
 is(chidiRow.points===25,'winner recovers stake, gains nothing (got '+chidiRow.points+')');
 const nk=db.prepare("SELECT rep,points FROM users WHERE username='nkechi'").get();
 is(nk.rep===-2,'heavy favourite wrong -> -2 rep (got '+nk.rep+')');
-is(nk.points===15,'loser forfeits stake (got '+nk.points+')');
+is(nk.points===10,'loser forfeits stake (got '+nk.points+')');
 
 // profile hides what it should
 r=await j('GET','/api/users/chidi');
@@ -107,6 +117,20 @@ settleMarket(2,'YES',{});
 const after=db.prepare("SELECT points FROM users WHERE username='dami'").get().points;
 is(after===before+3,'no opponent -> void and full refund');
 is(db.prepare('SELECT state FROM markets WHERE id=2').get().state==='void','market marked void');
+
+// ---- results wait at the top of the feed until seen -----------------------
+r=await j('GET','/api/digest',null,chidi);
+is(r.body.results.length===1&&r.body.results[0].market_id===1,'a settled call from before shows in the digest');
+is(r.body.results[0].won===true&&r.body.results[0].side==='yes','and says the caller won it, on which side');
+
+r=await j('GET','/api/digest',null,toks.dami);
+const void_=r.body.results.find(x=>x.market_id===2);
+is(!!void_&&void_.voided===true,'a voided market is reported too, not silently skipped');
+
+r=await j('POST','/api/digest/seen',null,chidi);
+is(r.status===200,'a user can acknowledge their results');
+r=await j('GET','/api/digest',null,chidi);
+is(r.body.results.length===0,'and they stop showing once acknowledged');
 
 srv.close();
 console.log(fails?`\n${fails} FAILED`:'\nall green');

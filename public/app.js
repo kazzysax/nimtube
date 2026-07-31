@@ -27,6 +27,7 @@ const S = {
   draft2: null,
   owed: [],
   voters: null,
+  digest: null,
 };
 
 const el = document.getElementById('app');
@@ -254,6 +255,45 @@ function timeLeft(iso) {
   return { text: `${Math.max(1, Math.round(ms / 6e4))}M LEFT`, soon: true };
 }
 
+/** What happened while you were gone. Sits above the feed rather than in a
+ *  notification screen nobody opens: results you have not seen, and the daily
+ *  points waiting to be claimed. */
+function digestHtml(d) {
+  if (!d) return '';
+  const { results = [], daily } = d;
+  if (!results.length && !daily?.available) return '';
+
+  const card = r => {
+    const cls = r.voided ? 'v' : r.won ? 'w' : 'l';
+    const verdict = r.voided ? 'VOID' : r.won ? 'WON' : 'LOST';
+    const delta = r.voided ? 'Stake refunded'
+      : `${r.rep_delta > 0 ? '+' : ''}${r.rep_delta ?? 0} rep · ${r.won ? `${r.stake} pts back` : `${r.stake} pts gone`}`;
+    return `
+      <div class="dg ${cls}" data-market="${r.market_id}">
+        <div class="dgtop"><span class="dgv">${verdict}</span>
+          <span class="dgs">You were on ${esc(String(r.side).toUpperCase())}</span></div>
+        <p class="dgq">${esc(r.said)}</p>
+        <p class="dgd">${r.voided ? esc(r.void_reason || 'Could not be settled') : delta}</p>
+      </div>`;
+  };
+
+  return `
+    <div class="digest">
+      ${daily?.available ? `
+        <div class="dg claim" id="dailyclaim">
+          <div class="dgtop"><span class="dgv">DAILY</span></div>
+          <p class="dgq">Your ${daily.amount} points are waiting</p>
+          <button class="dgbtn">Claim ${daily.amount} points</button>
+        </div>` : ''}
+      ${results.length ? `
+        <div class="dghead">
+          <h3>While you were away</h3>
+          <span class="dgclear" id="digestseen">Clear</span>
+        </div>
+        ${results.map(card).join('')}` : ''}
+    </div>`;
+}
+
 function screenFeed() {
   const chips = ['All', ...CATEGORIES];
   return h`
@@ -267,6 +307,7 @@ function screenFeed() {
         data-cat="${c === 'All' ? '' : c}">${c}</span>`).join('')}
     </div>
     <div class="feed">
+      ${digestHtml(S.digest)}
       ${S.markets.length ? S.markets.map(postHtml).join('')
         : `<div class="empty">Nothing here yet.<br>Tap + and make a call.</div>`}
     </div>
@@ -666,7 +707,11 @@ async function render() {
     el.innerHTML = screenProfile(profile, uname === S.me.username);
   } else {
     const q = new URLSearchParams({ state: S.feedState, ...(S.category ? { category: S.category } : {}) });
-    S.markets = await api('/feed?' + q).catch(() => []);
+    const [markets, digest] = await Promise.all([
+      api('/feed?' + q).catch(() => []),
+      api('/digest').catch(() => null),
+    ]);
+    S.markets = markets; S.digest = digest;
     el.innerHTML = screenFeed();
   }
   if (S.composing) el.insertAdjacentHTML('beforeend', composeHtml());
@@ -778,6 +823,25 @@ function bind() {
     render();
   });
   on('#vclose', 'click', () => { S.voters = null; render(); });
+
+  on('#dailyclaim', 'click', async e => {
+    const btn = e.currentTarget.querySelector('.dgbtn');
+    btn.disabled = true; btn.textContent = 'Claiming…';
+    try {
+      const r = await api('/daily', { method: 'POST' });
+      S.me = { ...S.me, points: r.points };
+      render();
+    } catch (err) { btn.disabled = false; alert(err.message); }
+  });
+
+  on('#digestseen', 'click', async e => {
+    e.stopPropagation();
+    // Clear it locally first so the strip goes immediately rather than after a
+    // round trip; the results are already banked in rep and points either way.
+    S.digest = { ...S.digest, results: [] };
+    render();
+    await api('/digest/seen', { method: 'POST' }).catch(() => {});
+  });
 
   on('[data-tab]', 'click', e => { S.viewUser = null; S.tab = e.currentTarget.dataset.tab; render(); });
   on('#wallettip', 'click', () => { S.tipTarget = { username: '', locked: false, amount: '', sending: false, error: null }; render(); });

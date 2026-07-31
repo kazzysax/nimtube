@@ -173,6 +173,21 @@ CREATE TABLE IF NOT EXISTS sessions (
   }
 }
 
+// Settled wagers are reported back to the user the next time they open the app,
+// so both sides of that need a clock: when the result landed, and how far the
+// user has already been shown. Existing accounts start caught up — nobody wants
+// a wall of results from before the feature existed.
+{
+  const wcols = db.prepare('PRAGMA table_info(wagers)').all().map(c => c.name);
+  if (!wcols.includes('settled_at')) db.exec('ALTER TABLE wagers ADD COLUMN settled_at TEXT');
+
+  const ucols = db.prepare('PRAGMA table_info(users)').all().map(c => c.name);
+  if (!ucols.includes('results_seen_at')) {
+    db.exec('ALTER TABLE users ADD COLUMN results_seen_at TEXT');
+    db.exec("UPDATE users SET results_seen_at = datetime('now')");
+  }
+}
+
 // Accounts predate profile pictures. Give everyone who already exists one, spread
 // across the set rather than all landing on the same bird.
 {

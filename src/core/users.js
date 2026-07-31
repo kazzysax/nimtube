@@ -72,14 +72,16 @@ export function userForToken(token) {
   ).get(token) || null;
 }
 
-/** Daily 5 points. Idempotent per calendar day — claiming twice does nothing. */
+export const DAILY_POINTS = 5;
+
+/** Daily points. Idempotent per calendar day — claiming twice does nothing. */
 export function claimAllowance(user) {
   const today = new Date().toISOString().slice(0, 10);
   if (user.last_allowance === today) return { claimed: 0, points: user.points };
-  db.prepare('UPDATE users SET points = points + 5, last_allowance = ? WHERE id = ?')
-    .run(today, user.id);
+  db.prepare('UPDATE users SET points = points + ?, last_allowance = ? WHERE id = ?')
+    .run(DAILY_POINTS, today, user.id);
   const fresh = db.prepare('SELECT points FROM users WHERE id = ?').get(user.id);
-  return { claimed: 5, points: fresh.points };
+  return { claimed: DAILY_POINTS, points: fresh.points };
 }
 
 /** Public profile. Stake sizes, weights and points balance are never exposed —
