@@ -215,48 +215,63 @@ function screenFeed() {
     ${tabsHtml()}`;
 }
 
+const I_STACK = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
+  <ellipse cx="12" cy="6" rx="7.4" ry="3"/><path d="M4.6 6v6c0 1.66 3.31 3 7.4 3s7.4-1.34 7.4-3V6"/>
+  <path d="M4.6 12v6c0 1.66 3.31 3 7.4 3s7.4-1.34 7.4-3v-6"/></svg>`;
+const I_INFO = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
+  <circle cx="12" cy="12" r="9.2"/><path d="M12 11.2v5.4" stroke-linecap="round"/>
+  <circle cx="12" cy="7.7" r="1.15" fill="currentColor" stroke="none"/></svg>`;
+const I_HEX = `<svg viewBox="0 0 24 24"><polygon points="6.2,2.6 17.8,2.6 23,12 17.8,21.4 6.2,21.4 1,12" fill="currentColor"/></svg>`;
+const I_PLANE = `<svg viewBox="0 0 24 24" fill="currentColor">
+  <path d="M2.3 11.4 21.3 3.1c.6-.26 1.22.36.96.96l-8.3 19c-.27.62-1.15.6-1.38-.05l-2.6-7.25a1 1 0 0 0-.6-.6L2.35 12.8c-.66-.24-.68-1.12-.05-1.4Z"/></svg>`;
+
 function screenWallet(w) {
   const bal = (w.balanceNim !== null && w.balanceNim !== undefined) ? w.balanceNim.toFixed(2) : '—';
   return h`
     <div class="glow"></div>
-    <div class="top"><span class="logo">Wallet</span><span class="pts">${w.points} PTS</span></div>
-    <div class="tiles">
-      <div class="tile">
-        <span class="tlabel">NIM balance</span>
-        <span class="tval">${bal}</span>
-      </div>
-      <div class="tile action" id="wallettip">
-        <span class="tlabel">Tip</span>
-        <span class="tval green">◆</span>
-        <span class="ttip">Send NIM to a username</span>
-      </div>
-    </div>
+    <div class="whead"><h1>Wallet</h1></div>
 
-    <div class="section"><h3>Assets</h3></div>
-    <div class="feed" style="padding-top:0">
-      <div class="row"><span class="av"></span>
-        <span class="rm"><b>NIM</b><s>On-chain balance</s></span>
-        <span class="repn">${bal}</span></div>
-      <div class="row"><span class="av"></span>
-        <span class="rm"><b>Points</b><s>No cash value · cannot be bought or sold</s></span>
-        <span class="repn">${w.points}</span></div>
-
-      <div class="section" style="padding:0"><h3>Tip info</h3></div>
-      <div class="post">
-        <div class="verdict">
-          <div><div class="big">${w.tipsReceived}</div><div class="lbl">NIM confirmed</div></div>
-          <div class="rt">${w.tipsSent} NIM sent</div>
+    <div class="wtiles">
+      <div class="wtile nim">
+        <div class="wtop">
+          <span class="wbadge blue">${I_STACK}</span>
+          <span class="wlabel">NIM balance</span>
+          <span class="winfo" title="Live on-chain balance for your Nimiq address">${I_INFO}</span>
         </div>
-        ${w.tipsPending ? `<p class="lock">${w.tipsPending} NIM AWAITING CONFIRMATION</p>` : ''}
-        ${(w.rejected || []).map(x => `<p class="lock" style="color:var(--no)">REJECTED · ${esc(x.failed_reason)}</p>`).join('')}
+        <div class="wbal">${bal}</div>
+        <div class="wunit">NIM</div>
+        <div class="stage"><span class="plinth"></span><span class="coin"></span></div>
       </div>
 
-      <div class="section" style="padding:0"><h3>Bounties won</h3></div>
-      <div class="post">
-        ${w.bounties.length ? w.bounties.map(b =>
-          `<p class="q">${b.amount_nim} NIM${b.paid ? '' : ' · pending'}</p>`).join('')
-          : '<div class="empty">None yet.</div>'}</div>
+      <div class="wtile tip" id="wallettip">
+        <div class="wtop">
+          <span class="wbadge green">${I_HEX}</span>
+          <span class="wlabel">Tip</span>
+        </div>
+        <div class="stage lit"><span class="coin"></span></div>
+        <div class="wcap"><b>Reward a correct call</b><s>Send NIM to any username.</s></div>
+      </div>
     </div>
+
+    <div class="wsec"><h3>Assets</h3></div>
+    <div class="group">
+      <div class="grow">
+        <span class="gicon">${I_HEX}</span>
+        <span class="gm"><b>NIM</b><s>On-chain balance</s></span>
+        <span class="gv"><b>${bal}</b><s>NIM</s></span>
+      </div>
+    </div>
+
+    <div class="wsec"><h3>Tip info</h3></div>
+    <div class="group tipinfo">
+      <span class="lead"><b>${w.tipsReceived}</b><s>NIM confirmed</s></span>
+      <span class="plane">${I_PLANE}</span>
+      <span class="sent"><b>${w.tipsSent} NIM</b><s>sent</s></span>
+    </div>
+    ${w.tipsPending ? `<p class="lock">${w.tipsPending} NIM AWAITING CONFIRMATION</p>` : ''}
+    ${(w.rejected || []).map(x => `<p class="lock" style="color:var(--no)">REJECTED · ${esc(x.failed_reason)}</p>`).join('')}
+
+    <div class="wfill"></div>
     ${tabsHtml()}`;
 }
 

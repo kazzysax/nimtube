@@ -124,14 +124,80 @@ textarea{width:100%;min-height:110px;background:var(--card);border:1px solid var
 .section{padding:2px 16px 0}
 .section h3{font-family:var(--mono);font-size:10px;letter-spacing:.16em;color:var(--dimmer);text-transform:uppercase;margin:16px 0 9px}
 
-.tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:2px 14px 4px}
-.tile{aspect-ratio:1;background:var(--card);border:1px solid var(--line);border-radius:18px;
-  padding:16px;display:flex;flex-direction:column;justify-content:space-between}
-.tile .tlabel{font-family:var(--mono);font-size:9px;letter-spacing:.14em;color:var(--dimmer);text-transform:uppercase}
-.tile .tval{font-family:var(--display);font-weight:800;font-size:26px;color:var(--ink);line-height:1.05}
-.tile .tval.green{color:var(--green)}
-.tile .ttip{font-size:11px;color:var(--dim);line-height:1.4}
-.tile.action{cursor:pointer;background:rgba(47,209,134,.08);border-color:var(--line2)}
+/* ---- wallet -------------------------------------------------------------- */
+.whead{padding:20px 18px 14px}
+.whead h1{font-family:var(--display);font-weight:800;font-size:31px;letter-spacing:-.035em}
+.wfill{flex:1}
+
+.wtiles{display:grid;grid-template-columns:1fr 1fr;gap:11px;padding:0 15px}
+.wtile{position:relative;overflow:hidden;border-radius:20px;padding:15px 15px 17px;
+  display:flex;flex-direction:column;min-height:262px}
+.wtile.nim{border:1px solid rgba(61,139,255,.45);
+  background:linear-gradient(168deg,rgba(23,47,86,.92),rgba(9,15,26,.97) 60%)}
+.wtile.tip{border:1px solid rgba(47,209,134,.36);cursor:pointer;
+  background:linear-gradient(168deg,rgba(15,60,44,.9),rgba(8,18,16,.97) 60%)}
+.wtile.tip:active{transform:scale(.985)}
+
+.wtop{display:flex;align-items:center;gap:8px}
+.wbadge{width:27px;height:27px;flex:0 0 27px;border-radius:9px;display:grid;place-items:center}
+.wbadge svg{width:14px;height:14px}
+.wbadge.blue{background:rgba(61,139,255,.18);border:1px solid rgba(61,139,255,.34);color:#77ADFF}
+.wbadge.green{background:rgba(47,209,134,.18);border:1px solid rgba(47,209,134,.34);color:var(--green)}
+.wlabel{font-family:var(--mono);font-size:9.5px;letter-spacing:.15em;color:#AABCD4;text-transform:uppercase}
+.winfo{margin-left:auto;width:16px;height:16px;color:#5A6C86}
+.winfo svg{width:16px;height:16px;display:block}
+
+.wbal{font-family:var(--display);font-weight:800;font-size:39px;letter-spacing:-.035em;line-height:1;margin-top:15px}
+.wunit{font-family:var(--mono);font-size:12px;letter-spacing:.06em;color:#8FA3BD;margin-top:5px}
+
+/* The coin sits in a lit stage: a radial bloom behind it, a plinth beneath. */
+.stage{flex:1;position:relative;display:flex;align-items:flex-end;justify-content:center;min-height:104px;margin-top:6px}
+.stage::before{content:'';position:absolute;left:50%;top:52%;transform:translate(-50%,-50%);
+  width:168px;height:168px;border-radius:50%;pointer-events:none;
+  background:radial-gradient(circle,rgba(255,178,34,.34),rgba(255,178,34,.07) 46%,transparent 68%)}
+.stage.lit::before{background:radial-gradient(circle,rgba(255,178,34,.30),rgba(47,209,134,.16) 44%,transparent 70%)}
+.stage.lit{align-items:center}
+.coin{position:relative;width:92px;height:82px;
+  clip-path:polygon(25% 0%,75% 0%,100% 50%,75% 100%,25% 100%,0% 50%);
+  background:linear-gradient(158deg,#FFE083 4%,#FFB92C 44%,#E07E06 100%);
+  box-shadow:0 0 30px rgba(255,168,20,.5)}
+.coin::after{content:'';position:absolute;inset:8px;
+  clip-path:polygon(25% 0%,75% 0%,100% 50%,75% 100%,25% 100%,0% 50%);
+  background:linear-gradient(158deg,rgba(255,255,255,.42),rgba(255,255,255,.04) 52%,transparent 70%)}
+.plinth{position:absolute;bottom:-6px;left:50%;transform:translateX(-50%);
+  width:140px;height:38px;border-radius:50%;
+  background:radial-gradient(ellipse at 50% 34%,rgba(255,182,40,.5),rgba(74,45,8,.92) 54%,rgba(10,14,22,.96) 74%);
+  box-shadow:0 8px 20px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,206,102,.4)}
+
+.wcap{margin-top:12px}
+.wcap b{display:block;font-size:13.5px;font-weight:600;letter-spacing:-.01em}
+.wcap s{display:block;text-decoration:none;font-size:11.5px;color:#8FA3BD;margin-top:3px;line-height:1.4}
+
+.wsec{padding:20px 18px 10px}
+.wsec h3{font-family:var(--display);font-weight:700;font-size:17.5px;letter-spacing:-.025em}
+
+.group{margin:0 15px;background:var(--card);border:1px solid var(--line);border-radius:18px;overflow:hidden}
+.grow{display:flex;align-items:center;gap:13px;padding:14px 15px}
+.grow+.grow{border-top:1px solid var(--line)}
+.gicon{width:39px;height:39px;flex:0 0 39px;border-radius:12px;display:grid;place-items:center;
+  background:rgba(255,178,34,.13);color:#FFB422}
+.gicon svg{width:21px;height:21px}
+.gm{flex:1;min-width:0}
+.gm b{display:block;font-size:14.5px;font-weight:600}
+.gm s{display:block;text-decoration:none;font-size:12px;color:var(--dim);margin-top:2px}
+.gv{text-align:right}
+.gv b{display:block;font-family:var(--mono);font-size:17px;font-weight:400;color:var(--green)}
+.gv s{display:block;text-decoration:none;font-family:var(--mono);font-size:10px;color:var(--dimmer);margin-top:3px}
+
+.tipinfo{display:flex;align-items:center;gap:14px;padding:18px 16px}
+.tipinfo .lead b{display:block;font-family:var(--display);font-weight:800;font-size:33px;color:var(--green);line-height:1}
+.tipinfo .lead s{display:block;text-decoration:none;font-family:var(--mono);font-size:9.5px;letter-spacing:.15em;
+  color:var(--dimmer);text-transform:uppercase;margin-top:7px}
+.tipinfo .plane{margin-left:auto;color:#54677F}
+.tipinfo .plane svg{width:42px;height:42px;display:block;transform:rotate(-12deg)}
+.tipinfo .sent{text-align:right}
+.tipinfo .sent b{display:block;font-family:var(--display);font-weight:700;font-size:17.5px}
+.tipinfo .sent s{display:block;text-decoration:none;font-size:11.5px;color:var(--dim);margin-top:3px}
 
 .profilehead{text-align:center;padding:10px 20px 4px}
 .profilehead .av{width:56px;height:56px;display:inline-block;margin-bottom:12px}
