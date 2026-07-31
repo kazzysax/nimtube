@@ -4,7 +4,7 @@ import { gate } from './terminal.js';
 
 const MAX_MARKETS_PER_DAY = 5;
 
-export async function createMarket(user, rawText, { bountyNim = 0, bountyWinners = 0 } = {}) {
+export async function createMarket(user, rawText, { tipNim = 0, tipWinners = 0 } = {}) {
   const today = new Date().toISOString().slice(0, 10);
   const made = db.prepare(
     "SELECT COUNT(*) n FROM markets WHERE creator_id = ? AND date(created_at) = ?"
@@ -35,8 +35,8 @@ export async function createMarket(user, rawText, { bountyNim = 0, bountyWinners
     opens_at: now,
     closes_at: verdict.closes_at,
     resolves_at: verdict.resolves_at,
-    bounty_nim: bountyNim,
-    bounty_winners: bountyWinners,
+    bounty_nim: tipNim,
+    bounty_winners: tipWinners,
   });
 
   return { approved: true, market: getMarket(info.lastInsertRowid) };
@@ -45,7 +45,7 @@ export async function createMarket(user, rawText, { bountyNim = 0, bountyWinners
 export const getMarket = id => db.prepare('SELECT * FROM markets WHERE id = ?').get(id);
 
 const wagersFor = id => db.prepare(
-  'SELECT id, user_id AS userId, side, stake, weight FROM wagers WHERE market_id = ?'
+  'SELECT id, user_id AS userId, side, stake, weight, placed_at AS placedAt FROM wagers WHERE market_id = ?'
 ).all(id);
 
 /** One wager per market. Enforced by a UNIQUE constraint, not by hope. */
@@ -108,7 +108,9 @@ export function viewMarket(marketId, user) {
     closes_at: m.closes_at,
     resolves_at: m.resolves_at,
     state: m.state,
-    bounty: m.bounty_nim > 0 ? { nim: m.bounty_nim, winners: m.bounty_winners } : null,
+    // Stored in the bounty_* columns for historical reasons; surfaced as what it
+    // now is — a tip the author pays to the top scorers when this settles.
+    tipPool: m.bounty_nim > 0 ? { nim: m.bounty_nim, winners: m.bounty_winners } : null,
     bar: bar(ws),                    // null until 5 wagers exist
     wagerCount: ws.length,
     committed: !!mine,
@@ -157,18 +159,21 @@ export function settleMarket(marketId, outcome, log) {
     db.prepare(`UPDATE markets SET state='resolved', outcome=?, resolution_log=? WHERE id=?`)
       .run(outcome, JSON.stringify(log || {}), marketId);
 
-    // Bounty: drawn at random among whoever was correct, never weighted by stake.
+    // Tip pool: the author promised this much NIM each to the top scorers on
+    // this call. Ranked by the reputation the call actually earned them, so the
+    // reward tracks how hard the read was — not how much they happened to stake.
+    // Ties break towards whoever committed first.
     if (m.bounty_nim > 0 && m.bounty_winners > 0) {
-      const winners = result.results.filter(r => r.won).map(r => r.userId);
-      for (let i = winners.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [winners[i], winners[j]] = [winners[j], winners[i]];
-      }
-      const picked = winners.slice(0, m.bounty_winners);
-      const each = m.bounty_nim;
-      for (const uid of picked) {
+      const placedAt = new Map(ws.map(w => [w.userId, w.placedAt]));
+      const picked = result.results
+        .filter(r => r.won)
+        .sort((a, b) => b.repDelta - a.repDelta
+          || String(placedAt.get(a.userId)).localeCompare(String(placedAt.get(b.userId))))
+        .slice(0, m.bounty_winners);
+
+      for (const r of picked) {
         db.prepare('INSERT INTO bounty_awards (market_id, user_id, amount_nim) VALUES (?,?,?)')
-          .run(marketId, uid, each);
+          .run(marketId, r.userId, m.bounty_nim);
       }
     }
   })();

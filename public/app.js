@@ -2,6 +2,7 @@ import * as wallet from './nimiq.js';
 
 const CATEGORIES = ['Crypto', 'Football', 'Politics', 'Music', 'Weather', 'AI'];
 const STAKES = [1, 3, 5, 10, 20];
+const REVEAL_AT = 5;                 // wagers needed before the bar is readable
 
 const S = {
   token: localStorage.getItem('predtube.token'),
@@ -18,6 +19,9 @@ const S = {
   gateError: null,
   viewUser: null,
   tipTarget: null,
+  poolOpen: false,
+  pool: { nim: '', winners: '' },
+  draft: '',
 };
 
 const el = document.getElementById('app');
@@ -121,8 +125,10 @@ function barHtml(m) {
   // Blind until committed: the bar is the one public statistic, and it carries
   // no numbers. Before five wagers there isn't one to show at all.
   if (m.bar === null || m.bar === undefined) {
+    const left = Math.max(1, REVEAL_AT - m.wagerCount);
     return `<div class="bar blind"><u style="width:100%"></u></div>
-            <div class="blab"><span>TOO EARLY TO READ</span><span>${m.wagerCount} IN</span></div>`;
+            <div class="blab"><span class="warm">WARMING UP</span>
+              <span>${left} MORE CALL${left === 1 ? '' : 'S'} TO REVEAL</span></div>`;
   }
   return `<div class="bar"><u class="y" style="width:${m.bar}%"></u><u class="n" style="width:${100 - m.bar}%"></u></div>
           <div class="blab"><span class="yl">YES</span><span class="nl">NO</span></div>`;
@@ -136,17 +142,16 @@ function postHtml(m) {
   return h`
     <div class="post" data-market="${m.id}">
       <div class="ph"><span class="av"></span><b data-viewuser="${esc(m.creator?.username || '')}">@${esc(m.creator?.username || '')}</b>
-        <span class="rp">${m.creator?.rep ?? 0}</span><s>${left}</s></div>
-      ${m.bounty ? `<span class="bounty">◆ ${m.bounty.nim} NIM × ${m.bounty.winners}</span>` : ''}
+        <span class="rp">${m.creator?.rep ?? 0}</span>
+        <s class="${left.soon ? 'soon' : ''}">${left.text}</s></div>
+      ${tipPoolPill(m)}
       <p class="q">${esc(m.question)}</p>
       <p class="src"><u></u>${esc(m.source_name)}</p>
       ${barHtml(m)}
       ${committed ? `
-        <div class="acts">
-          <span class="a y" ${m.mySide === 'yes' ? '' : 'disabled'}>Yes</span>
-          <span class="a n" ${m.mySide === 'no' ? '' : 'disabled'}>No</span>
-        </div>
-        <p class="lock">YOU'RE IN ON ${m.mySide.toUpperCase()} · LOCKED</p>`
+        <div class="inbadge ${m.mySide === 'yes' ? 'y' : 'n'}">
+          <i>◆</i> You're in on ${m.mySide.toUpperCase()} <i>· locked</i>
+        </div>`
       : `
         <div class="stakes">${STAKES.map(s =>
           `<span class="st ${S.stake === s ? 'on' : ''}" data-stake="${s}">${s}</span>`).join('')}</div>
@@ -157,6 +162,11 @@ function postHtml(m) {
         <p class="lock">ONE WAGER · NO EDITS · NO EXITS</p>`}
     </div>`;
 }
+
+/** The author's promise: this much NIM each, to the top scorers on this call. */
+const tipPoolPill = m => m.tipPool
+  ? `<span class="bounty">◆ ${m.tipPool.nim} NIM × ${m.tipPool.winners} top scorer${m.tipPool.winners === 1 ? '' : 's'}</span>`
+  : '';
 
 function resolvedHtml(m) {
   if (m.state === 'void') {
@@ -188,11 +198,15 @@ function resolvedHtml(m) {
     </div>`;
 }
 
+/** Under an hour it counts down in minutes and turns red — that window is when
+ *  the decision actually costs you something. */
 function timeLeft(iso) {
   const ms = Date.parse(iso) - Date.now();
-  if (ms <= 0) return 'CLOSED';
+  if (ms <= 0) return { text: 'CLOSED', soon: true };
   const hrs = ms / 36e5;
-  return hrs >= 24 ? `${Math.floor(hrs / 24)}D LEFT` : `${Math.max(1, Math.floor(hrs))}H LEFT`;
+  if (hrs >= 24) return { text: `${Math.floor(hrs / 24)}D LEFT`, soon: false };
+  if (hrs >= 1) return { text: `${Math.floor(hrs)}H LEFT`, soon: hrs < 2 };
+  return { text: `${Math.max(1, Math.round(ms / 6e4))}M LEFT`, soon: true };
 }
 
 function screenFeed() {
@@ -268,6 +282,11 @@ function screenWallet(w) {
       <span class="plane">${I_PLANE}</span>
       <span class="sent"><b>${w.tipsSent} NIM</b><s>sent</s></span>
     </div>
+    ${w.pool?.wins ? `
+      <div class="group poolwin">
+        <span class="gm"><b>Top-scorer tips</b><s>${w.pool.wins} call${w.pool.wins === 1 ? '' : 's'} you placed top on</s></span>
+        <span class="gv"><b>${w.pool.owed}</b><s>NIM owed</s></span>
+      </div>` : ''}
     ${w.tipsPending ? `<p class="lock">${w.tipsPending} NIM AWAITING CONFIRMATION</p>` : ''}
     ${(w.rejected || []).map(x => `<p class="lock" style="color:var(--no)">REJECTED · ${esc(x.failed_reason)}</p>`).join('')}
 
@@ -302,7 +321,7 @@ function screenPositions(positions) {
       <div class="post">
         <div class="blab" style="margin-bottom:10px">
           <span>${esc(p.category).toUpperCase()}</span>
-          <span>${p.state === 'open' ? timeLeft(p.closes_at) : p.state.toUpperCase()}</span>
+          <span>${p.state === 'open' ? timeLeft(p.closes_at).text : p.state.toUpperCase()}</span>
         </div>
         <p class="q">${esc(p.question)}</p>
         <div class="blab">
@@ -401,6 +420,28 @@ function composeHtml() {
         <div class="fix"><b>Try this instead</b><br>${esc(S.gateError.suggested_fix.question)}
         <br><span style="color:var(--dimmer)">Settled by ${esc(S.gateError.suggested_fix.source_name)}</span></div>` : ''}
       <textarea id="ctext" placeholder="will bitcoin pump this month"></textarea>
+
+      <div class="pool ${S.poolOpen ? 'on' : ''}">
+        <div class="poolhead" id="pooltoggle">
+          <span class="poolmark">◆</span>
+          <span class="poolt"><b>Tip the top scorers</b><s>Optional. Paid when this call settles.</s></span>
+          <span class="poolchev">${S.poolOpen ? '−' : '+'}</span>
+        </div>
+        ${S.poolOpen ? `
+          <div class="poolbody">
+            <label>
+              <s>NIM each</s>
+              <input id="pnim" type="number" min="0" step="0.01" placeholder="0.10" value="${S.pool.nim}" />
+            </label>
+            <label>
+              <s>People</s>
+              <input id="pwin" type="number" min="0" max="20" step="1" placeholder="5" value="${S.pool.winners}" />
+            </label>
+          </div>
+          <p class="poolnote">Goes to the highest scorers on this call — the sharpest reads, not the biggest stakes.</p>`
+        : ''}
+      </div>
+
       <div class="foot"><button class="cta" id="csubmit">Post it</button>
         <button class="ghost" id="ccancel">Cancel</button></div>
     </div></div>`;
@@ -464,6 +505,12 @@ async function render() {
 
 function bind() {
   const on = (sel, ev, fn) => el.querySelectorAll(sel).forEach(n => n.addEventListener(ev, fn));
+  const readPool = () => {
+    S.pool = {
+      nim: el.querySelector('#pnim')?.value ?? S.pool.nim,
+      winners: el.querySelector('#pwin')?.value ?? S.pool.winners,
+    };
+  };
 
   on('[data-go]', 'click', e => { S.step = Number(e.currentTarget.dataset.go); render(); });
 
@@ -535,16 +582,43 @@ function bind() {
     } catch (err) { alert(err.message); }
   });
 
-  on('#compose', 'click', () => { S.composing = true; S.gateError = null; render(); });
+  on('#compose', 'click', () => {
+    S.composing = true; S.gateError = null;
+    S.poolOpen = false; S.pool = { nim: '', winners: '' };
+    S.draft = '';
+    render();
+  });
   on('#ccancel', 'click', () => { S.composing = false; render(); });
 
+  // The sheet is re-rendered on every gate rejection, so what's typed has to
+  // survive in state rather than in the DOM.
+  const ctext = el.querySelector('#ctext');
+  if (ctext) {
+    if (S.draft) ctext.value = S.draft;
+    ctext.addEventListener('input', () => { S.draft = ctext.value; });
+  }
+  on('#pooltoggle', 'click', () => { S.poolOpen = !S.poolOpen; readPool(); render(); });
+  on('#pnim, #pwin', 'input', readPool);
+
   on('#csubmit', 'click', async e => {
-    const text = el.querySelector('#ctext').value.trim();
+    const text = (el.querySelector('#ctext')?.value || '').trim();
     if (!text) return;
+    readPool();
+    S.draft = text;
+
+    const tipNim = Number(S.pool.nim) || 0;
+    const tipWinners = Number(S.pool.winners) || 0;
+    if (tipNim > 0 && tipWinners < 1) {
+      S.gateError = { reason: 'Say how many people the tip is split between.' }; return render();
+    }
+    if (tipWinners > 0 && tipNim <= 0) {
+      S.gateError = { reason: 'Say how much NIM each winner gets.' }; return render();
+    }
+
     e.currentTarget.disabled = true; e.currentTarget.textContent = 'Checking…';
     try {
-      const r = await api('/markets', { method: 'POST', body: { text } });
-      if (r.approved) { S.composing = false; S.gateError = null; }
+      const r = await api('/markets', { method: 'POST', body: { text, tipNim, tipWinners } });
+      if (r.approved) { S.composing = false; S.gateError = null; S.draft = ''; }
       else S.gateError = r;
       render();
     } catch (err) { S.gateError = { reason: err.message }; render(); }

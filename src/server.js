@@ -15,6 +15,8 @@ import * as tipJob from './jobs/tipwatcher.js';
 const app = express();
 app.use(express.json());
 
+const MAX_TIP_WINNERS = 20;   // a call's tip pool can name at most this many people
+
 const here = dirname(fileURLToPath(import.meta.url));
 app.use(express.static(join(here, '..', 'public')));
 
@@ -106,12 +108,24 @@ app.get('/api/markets/:id', wrap((req, res) => {
 /** Posts are the markets. Everything goes through the gate before it exists. */
 app.post('/api/markets', wrap(async (req, res) => {
   if (!need(req, res)) return;
-  const { text, bountyNim = 0, bountyWinners = 0 } = req.body || {};
+  const { text } = req.body || {};
+  const tipNim = Number(req.body?.tipNim) || 0;
+  const tipWinners = Number(req.body?.tipWinners) || 0;
+
   if (!text || text.length < 5) throw Object.assign(new Error('Say more'), { status: 400 });
-  if (bountyNim > 0 && bountyWinners < 1) {
-    throw Object.assign(new Error('A bounty needs at least one winner'), { status: 400 });
+  if (tipNim < 0 || tipWinners < 0) {
+    throw Object.assign(new Error('A tip cannot be negative'), { status: 400 });
   }
-  const out = await createMarket(req.user, text, { bountyNim, bountyWinners });
+  if (tipNim > 0 && tipWinners < 1) {
+    throw Object.assign(new Error('Say how many people the tip is split between'), { status: 400 });
+  }
+  if (tipWinners > 0 && tipNim <= 0) {
+    throw Object.assign(new Error('Say how much NIM each winner gets'), { status: 400 });
+  }
+  if (tipWinners > MAX_TIP_WINNERS) {
+    throw Object.assign(new Error(`A tip can name at most ${MAX_TIP_WINNERS} people`), { status: 400 });
+  }
+  const out = await createMarket(req.user, text, { tipNim, tipWinners });
   res.status(out.approved ? 201 : 200).json(out);
 }));
 
@@ -205,13 +219,19 @@ app.get('/api/wallet', wrap(async (req, res) => {
   const rejected = db.prepare(
     'SELECT tx_hash, failed_reason FROM tips WHERE from_id=? AND failed_reason IS NOT NULL ORDER BY created_at DESC LIMIT 10'
   ).all(req.user.id);
-  const bounties = db.prepare('SELECT * FROM bounty_awards WHERE user_id=? ORDER BY created_at DESC').all(req.user.id);
+  // Tip-pool wins: NIM promised by a call's author for finishing among its top
+  // scorers. Owed until the author pays it, so keep paid and unpaid apart.
+  const pool = db.prepare(`
+    SELECT COALESCE(SUM(CASE WHEN paid = 1 THEN amount_nim ELSE 0 END), 0) AS paid,
+           COALESCE(SUM(CASE WHEN paid = 0 THEN amount_nim ELSE 0 END), 0) AS owed,
+           COUNT(*) AS wins
+    FROM bounty_awards WHERE user_id = ?`).get(req.user.id);
   const { points, address } = db.prepare('SELECT points, address FROM users WHERE id=?').get(req.user.id);
   // Best-effort: a dev-mode address has nothing on chain to look up, and the RPC
   // may simply not be configured. Either way the client shows "—", never a false 0.
   const balanceNim = process.env.NIMIQ_RPC_URL && !address.startsWith('NQDEV')
     ? await getAccountByAddress(address) : null;
-  res.json({ points, balanceNim, tipsSent: sent, tipsReceived: recv, tipsPending: pendingIn, rejected, bounties });
+  res.json({ points, balanceNim, tipsSent: sent, tipsReceived: recv, tipsPending: pendingIn, rejected, pool });
 }));
 
 // ---- ops -----------------------------------------------------------------
