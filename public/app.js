@@ -54,6 +54,7 @@ function screenWelcome() {
     <div class="glow"></div><div class="pad">
       ${dots(0)}
       <div class="mid">
+        <img class="brandmark" src="/favicons/icon-512.png" alt="" width="72" height="72">
         <p class="brand">Pred<span>Tube</span></p>
         <p class="sub">TRACK CONVICTION WITH SOCIAL REPUTATION</p>
         <p class="sub2">Social · Public · Reputation</p>
@@ -69,6 +70,7 @@ function screenUsername() {
     <div class="glow"></div><div class="pad">
       ${dots(1)}
       <div class="mid">
+        <img class="brandmark small" src="/favicons/icon-512.png" alt="" width="44" height="44">
         <h2>Claim your name</h2>
         <p class="sub">Every call you make gets filed under it.</p>
         <input id="uname" placeholder="username" autocomplete="off" value="${esc(S.username)}" />

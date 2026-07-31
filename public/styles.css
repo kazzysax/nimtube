@@ -19,6 +19,10 @@ body{background:var(--black);color:var(--ink);font-family:var(--body);-webkit-fo
 .dots i{width:7px;height:7px;border-radius:99px;background:rgba(61,139,255,.18)}
 .dots i.on{width:26px;background:var(--blue)}
 .mid{margin:auto 0}
+.brandmark{display:block;width:72px;height:72px;margin:0 auto 18px;border-radius:20px;
+  box-shadow:0 0 32px rgba(47,209,134,.28),0 0 0 1px rgba(255,255,255,.06) inset}
+.brandmark.small{width:44px;height:44px;margin:0 auto 16px;border-radius:13px;
+  box-shadow:0 0 20px rgba(47,209,134,.22),0 0 0 1px rgba(255,255,255,.06) inset}
 .brand{font-family:var(--display);font-weight:800;font-size:36px;text-align:center;letter-spacing:-.035em;margin-bottom:13px}
 .brand span{color:var(--green)}
 h2{font-family:var(--display);font-weight:700;font-size:25px;line-height:1.13;letter-spacing:-.03em;text-align:center;margin-bottom:9px}
