@@ -93,7 +93,7 @@ CREATE INDEX IF NOT EXISTS idx_wagers_user   ON wagers(user_id);
 
 CREATE TABLE IF NOT EXISTS tips (
   id         INTEGER PRIMARY KEY,
-  market_id  INTEGER NOT NULL REFERENCES markets(id),
+  market_id  INTEGER REFERENCES markets(id),        -- NULL for a general user-to-user tip
   from_id    INTEGER NOT NULL REFERENCES users(id),
   to_id      INTEGER NOT NULL REFERENCES users(id),
   amount_nim REAL NOT NULL,
@@ -127,5 +127,32 @@ CREATE TABLE IF NOT EXISTS sessions (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 `);
+
+// Older deployments created `tips.market_id` as NOT NULL, back when every tip was
+// tied to a resolved call. Tipping is now general user-to-user, so market_id must
+// accept NULL. SQLite can't drop a column constraint in place — rebuild the table.
+{
+  const marketIdCol = db.prepare("PRAGMA table_info(tips)").all().find(c => c.name === 'market_id');
+  if (marketIdCol && marketIdCol.notnull) {
+    db.exec(`
+      CREATE TABLE tips_new (
+        id         INTEGER PRIMARY KEY,
+        market_id  INTEGER REFERENCES markets(id),
+        from_id    INTEGER NOT NULL REFERENCES users(id),
+        to_id      INTEGER NOT NULL REFERENCES users(id),
+        amount_nim REAL NOT NULL,
+        tx_hash    TEXT NOT NULL UNIQUE,
+        verified   INTEGER NOT NULL DEFAULT 0,
+        attempts   INTEGER NOT NULL DEFAULT 0,
+        failed_reason TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      INSERT INTO tips_new SELECT * FROM tips;
+      DROP TABLE tips;
+      ALTER TABLE tips_new RENAME TO tips;
+      CREATE INDEX IF NOT EXISTS idx_tips_pending ON tips(verified, failed_reason);
+    `);
+  }
+}
 
 export default db;

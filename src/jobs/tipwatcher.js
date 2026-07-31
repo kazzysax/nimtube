@@ -12,7 +12,7 @@ const TICK_MS = Number(process.env.TIPWATCHER_TICK_MS || 45_000);
 const MIN_CONFIRMATIONS = Number(process.env.TIP_MIN_CONFIRMATIONS || 10);
 const MAX_ATTEMPTS = Number(process.env.TIP_MAX_ATTEMPTS || 40);
 
-export const tipMarker = marketId => `predtube tip m${marketId}`;
+export const tipMarker = toUsername => `predtube tip @${String(toUsername).toLowerCase()}`;
 
 /** Every reason a tip can fail. Ordered so the most diagnostic wins. */
 export function checkTransaction(tx, tip, { minConfirmations = MIN_CONFIRMATIONS } = {}) {
@@ -33,10 +33,10 @@ export function checkTransaction(tx, tip, { minConfirmations = MIN_CONFIRMATIONS
     return { state: 'failed', reason: 'Recipient is not the person being tipped' };
   }
 
-  // The marker ties the payment to a specific market, on chain, at send time.
+  // The marker ties the payment to the intended recipient, on chain, at send time.
   const note = decodeData(tx.recipientData);
-  if (!note.includes(tipMarker(tip.market_id))) {
-    return { state: 'failed', reason: 'Transaction is not tagged for this market' };
+  if (!note.includes(tipMarker(tip.to_username))) {
+    return { state: 'failed', reason: 'Transaction is not tagged as a tip for this person' };
   }
 
   const value = Number(tx.value);
@@ -50,7 +50,7 @@ export function checkTransaction(tx, tip, { minConfirmations = MIN_CONFIRMATIONS
 
 const pending = () => db.prepare(`
   SELECT t.id, t.market_id, t.amount_nim, t.tx_hash, t.attempts,
-         f.address AS from_address, u.address AS to_address
+         f.address AS from_address, u.address AS to_address, u.username AS to_username
   FROM tips t
   JOIN users f ON f.id = t.from_id
   JOIN users u ON u.id = t.to_id
@@ -77,7 +77,7 @@ export async function tick() {
     if (verdict.state === 'verified') {
       db.prepare('UPDATE tips SET verified = 1, amount_nim = ?, attempts = attempts + 1 WHERE id = ?')
         .run(verdict.amountNim, tip.id);
-      console.log(`[tips] verified ${verdict.amountNim} NIM on market ${tip.market_id}`);
+      console.log(`[tips] verified ${verdict.amountNim} NIM to @${tip.to_username}`);
     } else if (verdict.state === 'failed') {
       db.prepare('UPDATE tips SET failed_reason = ?, attempts = attempts + 1 WHERE id = ?')
         .run(verdict.reason, tip.id);

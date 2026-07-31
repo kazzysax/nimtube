@@ -164,21 +164,18 @@ app.get('/api/leaderboard', wrap((req, res) => {
 /** The client sends NIM through Nimiq Pay's own confirmation dialog, then reports
  *  the hash here. Nothing else it says is trusted: the amount recorded now is
  *  provisional and gets overwritten by the chain, and `verified` stays 0 until the
- *  watcher has matched sender, recipient, market tag and value. */
-app.post('/api/markets/:id/tip', wrap((req, res) => {
+ *  watcher has matched sender, recipient, marker and value. Tipping is general —
+ *  from the wallet by username, or from a profile's tip button — not tied to any
+ *  particular market. */
+app.post('/api/tips', wrap((req, res) => {
   if (!need(req, res)) return;
   const { toUsername, amountNim, txHash } = req.body || {};
-  const marketId = Number(req.params.id);
 
   if (!/^[0-9a-fA-F]{64}$/.test(String(txHash || ''))) {
     throw Object.assign(new Error('A valid transaction hash is required'), { status: 400 });
   }
-
-  const market = db.prepare('SELECT state FROM markets WHERE id = ?').get(marketId);
-  if (!market) return res.status(404).json({ error: 'No such market' });
-  // Tips reward a proven call, so there has to be a call to reward.
-  if (market.state !== 'resolved') {
-    throw Object.assign(new Error('You can only tip a resolved market'), { status: 400 });
+  if (!(Number(amountNim) > 0)) {
+    throw Object.assign(new Error('Enter an amount'), { status: 400 });
   }
 
   const to = db.prepare('SELECT id FROM users WHERE username = ?').get(toUsername);
@@ -187,15 +184,15 @@ app.post('/api/markets/:id/tip', wrap((req, res) => {
 
   try {
     db.prepare(`INSERT INTO tips (market_id, from_id, to_id, amount_nim, tx_hash)
-                VALUES (?,?,?,?,?)`)
-      .run(marketId, req.user.id, to.id, Number(amountNim) || 0, String(txHash).toLowerCase());
+                VALUES (NULL,?,?,?,?)`)
+      .run(req.user.id, to.id, Number(amountNim), String(txHash).toLowerCase());
   } catch (e) {
     if (String(e.message).includes('UNIQUE')) {
       throw Object.assign(new Error('That transaction has already been submitted'), { status: 409 });
     }
     throw e;
   }
-  res.json({ ok: true, pendingVerification: true, marker: tipJob.tipMarker(marketId) });
+  res.json({ ok: true, pendingVerification: true, marker: tipJob.tipMarker(toUsername) });
 }));
 
 app.get('/api/wallet', wrap(async (req, res) => {

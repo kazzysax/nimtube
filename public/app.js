@@ -16,6 +16,8 @@ const S = {
   stake: 3,
   composing: false,
   gateError: null,
+  viewUser: null,
+  tipTarget: null,
 };
 
 const el = document.getElementById('app');
@@ -133,7 +135,7 @@ function postHtml(m) {
   const committed = m.committed;
   return h`
     <div class="post" data-market="${m.id}">
-      <div class="ph"><span class="av"></span><b>@${esc(m.creator?.username || '')}</b>
+      <div class="ph"><span class="av"></span><b data-viewuser="${esc(m.creator?.username || '')}">@${esc(m.creator?.username || '')}</b>
         <span class="rp">${m.creator?.rep ?? 0}</span><s>${left}</s></div>
       ${m.bounty ? `<span class="bounty">◆ ${m.bounty.nim} NIM × ${m.bounty.winners}</span>` : ''}
       <p class="q">${esc(m.question)}</p>
@@ -168,7 +170,7 @@ function resolvedHtml(m) {
   const d = m.myRepDelta;
   return h`
     <div class="post"><span class="stamp">Resolved</span>
-      <div class="ph"><span class="av"></span><b>@${esc(m.creator?.username || '')}</b>
+      <div class="ph"><span class="av"></span><b data-viewuser="${esc(m.creator?.username || '')}">@${esc(m.creator?.username || '')}</b>
         <span class="rp">${m.creator?.rep ?? 0}</span></div>
       <p class="q">${esc(m.question)}</p>
       <div class="bar"><u class="y" style="width:${yes}%"></u><u class="n" style="width:${100 - yes}%"></u></div>
@@ -181,7 +183,6 @@ function resolvedHtml(m) {
           <div class="rt">${d >= 4 ? 'Called it against the crowd' : d > 0 ? 'Correct' : 'Missed'}</div>
         </div>` : ''}
       <div class="tiprow">
-        <span class="tip" data-tip="${esc(m.creator?.username || '')}" data-mid="${m.id}">◆ Tip 0.5 NIM</span>
         <span class="share" data-share="${m.id}">Share</span>
       </div>
     </div>`;
@@ -227,7 +228,7 @@ function screenWallet(w) {
       <div class="tile action" id="wallettip">
         <span class="tlabel">Tip</span>
         <span class="tval green">◆</span>
-        <span class="ttip">Reward a correct call</span>
+        <span class="ttip">Send NIM to a username</span>
       </div>
     </div>
 
@@ -266,7 +267,7 @@ function screenExplore(board) {
     <div class="feed">
       <div class="section" style="padding:0 0 2px"><h3>Top predictors</h3></div>
       ${board.length ? board.map((p, i) => `
-        <div class="row">
+        <div class="row" data-viewuser="${esc(p.username)}">
           <span class="rank">${i + 1}</span>
           <span class="av"></span>
           <span class="rm"><b>@${esc(p.username)}</b><s>${p.played} settled · ${p.average} avg</s></span>
@@ -306,17 +307,26 @@ function screenPositions(positions) {
     ${tabsHtml()}`;
 }
 
-function screenProfile(p) {
+const TIP_ICON = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M12 3v13M12 3l-4 4M12 3l4 4"/><path d="M5 14v4a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-4"/></svg>`;
+
+function screenProfile(p, isSelf = true) {
   if (!p) return h`
     <div class="glow"></div>
     <div class="top"><span class="logo">Profile</span></div>
-    <div class="feed"><div class="empty">Couldn't load your profile.</div></div>
+    <div class="feed"><div class="empty">Couldn't load that profile.</div></div>
     ${tabsHtml()}`;
 
   const posts = p.posts || [];
   return h`
     <div class="glow"></div>
-    <div class="top"><span class="logo">Profile</span><span class="pts">${S.me?.points ?? 0} PTS</span></div>
+    <div class="top">
+      ${isSelf ? '' : `<span class="backbtn" data-back>‹</span>`}
+      <span class="logo">${isSelf ? 'Profile' : '@' + esc(p.username)}</span>
+      ${isSelf
+        ? `<span class="pts">${S.me?.points ?? 0} PTS</span>`
+        : `<span class="tipicon" data-tip-profile="${esc(p.username)}" title="Tip @${esc(p.username)}">${TIP_ICON}</span>`}
+    </div>
     <div class="profilehead">
       <span class="av"></span>
       <h2>@${esc(p.username)}</h2>
@@ -333,7 +343,7 @@ function screenProfile(p) {
       <div class="stat"><b>${p.played}</b><s>Played</s></div>
     </div>
     <div class="feed" style="padding-top:0">
-      <div class="section" style="padding:0 0 2px"><h3>His posts</h3></div>
+      <div class="section" style="padding:0 0 2px"><h3>${isSelf ? 'Your' : 'Their'} posts</h3></div>
       ${posts.length ? posts.map(m => `
         <div class="post">
           <p class="q">${esc(m.question)}</p>
@@ -381,6 +391,27 @@ function composeHtml() {
     </div></div>`;
 }
 
+// ---------- tipping --------------------------------------------------------
+
+function tipSheetHtml() {
+  const t = S.tipTarget;
+  return h`
+    <div class="sheet" id="sheet"><div class="sheetbox">
+      <h2 style="text-align:left;font-size:20px">Send NIM</h2>
+      <p class="sub" style="text-align:left">Goes out through Nimiq Pay. Confirms on chain before it counts.</p>
+      ${t.error ? `<div class="err">${esc(t.error)}</div>` : ''}
+      ${t.locked
+        ? `<p class="hint good" style="margin-bottom:12px">To @${esc(t.username)}</p>`
+        : `<input id="tipuser" placeholder="username" autocomplete="off" value="${esc(t.username)}" />`}
+      <input id="tipamount" type="number" min="0" step="0.01" placeholder="Amount in NIM"
+        value="${t.amount || ''}" style="margin-top:${t.locked ? '0' : '10px'}" />
+      <div class="foot">
+        <button class="cta" id="tipsend" ${t.sending ? 'disabled' : ''}>${t.sending ? 'Confirm in Nimiq Pay…' : 'Send'}</button>
+        <button class="ghost" id="tipcancel">Cancel</button>
+      </div>
+    </div></div>`;
+}
+
 // ---------- render + events ----------------------------------------------
 
 async function render() {
@@ -403,14 +434,16 @@ async function render() {
     const positions = await api('/positions').catch(() => []);
     el.innerHTML = screenPositions(positions);
   } else if (S.tab === 'profile') {
-    const profile = await api('/users/' + encodeURIComponent(S.me.username)).catch(() => null);
-    el.innerHTML = screenProfile(profile);
+    const uname = S.viewUser || S.me.username;
+    const profile = await api('/users/' + encodeURIComponent(uname)).catch(() => null);
+    el.innerHTML = screenProfile(profile, uname === S.me.username);
   } else {
     const q = new URLSearchParams({ state: S.feedState, ...(S.category ? { category: S.category } : {}) });
     S.markets = await api('/feed?' + q).catch(() => []);
     el.innerHTML = screenFeed();
   }
   if (S.composing) el.insertAdjacentHTML('beforeend', composeHtml());
+  if (S.tipTarget) el.insertAdjacentHTML('beforeend', tipSheetHtml());
   bind();
 }
 
@@ -454,13 +487,25 @@ function bind() {
   });
 
   on('[data-follow]', 'click', async e => {
+    e.stopPropagation();
     const u = e.currentTarget.dataset.follow;
     e.currentTarget.classList.add('on'); e.currentTarget.textContent = 'Following';
     if (S.token) await api(`/users/${u}/follow`, { method: 'POST' }).catch(() => {});
   });
 
-  on('[data-tab]', 'click', e => { S.tab = e.currentTarget.dataset.tab; render(); });
-  on('#wallettip', 'click', () => { S.tab = 'feed'; S.feedState = 'resolved'; S.category = null; render(); });
+  on('[data-viewuser]', 'click', e => {
+    const u = e.currentTarget.dataset.viewuser;
+    if (!u) return;
+    S.tab = 'profile'; S.viewUser = u; render();
+  });
+  on('[data-back]', 'click', () => { S.viewUser = null; render(); });
+
+  on('[data-tab]', 'click', e => { S.viewUser = null; S.tab = e.currentTarget.dataset.tab; render(); });
+  on('#wallettip', 'click', () => { S.tipTarget = { username: '', locked: false, amount: '', sending: false, error: null }; render(); });
+  on('[data-tip-profile]', 'click', e => {
+    S.tipTarget = { username: e.currentTarget.dataset.tipProfile, locked: true, amount: '', sending: false, error: null };
+    render();
+  });
   on('[data-cat]', 'click', e => { S.category = e.currentTarget.dataset.cat || null; S.feedState = 'open'; render(); });
   on('[data-state]', 'click', () => { S.feedState = S.feedState === 'resolved' ? 'open' : 'resolved'; render(); });
   on('[data-stake]', 'click', e => { S.stake = Number(e.currentTarget.dataset.stake); render(); });
@@ -490,26 +535,34 @@ function bind() {
     } catch (err) { S.gateError = { reason: err.message }; render(); }
   });
 
-  on('[data-tip]', 'click', async e => {
-    const btn = e.currentTarget;
-    const to = btn.dataset.tip, mid = btn.dataset.mid;
-    const before = btn.textContent;
+  on('#tipcancel', 'click', () => { S.tipTarget = null; render(); });
+
+  on('#tipsend', 'click', async () => {
+    const t = S.tipTarget;
+    const toUsername = (t.locked ? t.username : el.querySelector('#tipuser')?.value.trim()) || '';
+    const amount = Number(el.querySelector('#tipamount')?.value);
+
+    if (!toUsername) { S.tipTarget = { ...t, error: 'Enter a username' }; return render(); }
+    if (toUsername === S.me.username) { S.tipTarget = { ...t, error: 'You cannot tip yourself' }; return render(); }
+    if (!(amount > 0)) { S.tipTarget = { ...t, username: toUsername, error: 'Enter an amount' }; return render(); }
+
+    S.tipTarget = { ...t, username: toUsername, amount, sending: true, error: null };
+    render();
     try {
-      const profile = await api('/users/' + to);
+      const profile = await api('/users/' + encodeURIComponent(toUsername));
       if (!profile.address) throw new Error('That account has no wallet address');
-      btn.textContent = '◆ Confirm in Nimiq Pay…';
 
-      // The marker is what lets the server match this payment to this market on
+      // The marker is what lets the server match this payment to this recipient on
       // chain, so it has to go out with the transaction, not after it.
-      const hash = await wallet.sendNim(profile.address, 0.5, `predtube tip m${mid}`);
-      await api(`/markets/${mid}/tip`, { method: 'POST', body: { toUsername: to, amountNim: 0.5, txHash: hash } });
+      const hash = await wallet.sendNim(profile.address, amount, `predtube tip @${toUsername.toLowerCase()}`);
+      await api('/tips', { method: 'POST', body: { toUsername, amountNim: amount, txHash: hash } });
 
-      // Not "tipped" — it isn't real until the chain confirms it.
-      btn.textContent = '◆ Sent · confirming';
-      btn.style.opacity = '.7';
+      S.tipTarget = null;
+      alert(`Sent ${amount} NIM to @${toUsername} — confirming on chain.`);
+      render();
     } catch (err) {
-      btn.textContent = before;
-      alert(err.message);
+      S.tipTarget = { ...S.tipTarget, sending: false, error: err.message };
+      render();
     }
   });
 
