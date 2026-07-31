@@ -234,19 +234,37 @@ export function myPositions(userId, limit = 50) {
   `).all(userId, limit);
 }
 
-export function feed({ user, category, state = 'open', limit = 30 }) {
+/** Following curates the feed: once you follow anyone, this is their calls plus
+ *  your own. Follow nobody and you get everything — an empty feed teaches you
+ *  nothing, and there is nobody to follow until you have seen someone worth it.
+ *  `scope: 'all'` asks for everything regardless, which is what Explore uses. */
+export function feed({ user, category, state = 'open', limit = 30, scope = 'following' }) {
+  const followCount = user
+    ? db.prepare('SELECT COUNT(*) n FROM follows WHERE follower_id = ?').get(user.id).n
+    : 0;
+  const curated = scope === 'following' && !!user && followCount > 0;
+
+  const where = ['m.state = ?'];
+  const args = [state];
+  if (category) { where.push('m.category = ?'); args.push(category); }
+  if (curated) {
+    where.push(`(m.creator_id = ? OR m.creator_id IN
+      (SELECT followee_id FROM follows WHERE follower_id = ?))`);
+    args.push(user.id, user.id);
+  }
+  args.push(limit);
+
   const rows = db.prepare(`
     SELECT m.id FROM markets m
-    WHERE m.state = ?
-      ${category ? 'AND m.category = ?' : ''}
+    WHERE ${where.join(' AND ')}
     ORDER BY m.created_at DESC LIMIT ?
-  `).all(...(category ? [state, category, limit] : [state, limit]));
+  `).all(...args);
 
   return rows.map(r => {
     const v = viewMarket(r.id, user);
     const m = getMarket(r.id);
-    const creator = db.prepare('SELECT username, rep FROM users WHERE id = ?').get(m.creator_id);
-    return { ...v, creator };
+    const creator = db.prepare('SELECT username, rep, avatar FROM users WHERE id = ?').get(m.creator_id);
+    return { ...v, creator, curated };
   });
 }
 

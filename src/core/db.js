@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS users (
   username      TEXT NOT NULL UNIQUE,
   username_ci   TEXT NOT NULL UNIQUE,        -- case/lookalike-folded, uniqueness key
   device_hash   TEXT,                        -- requestDeviceIdentifier(), anti-sybil signal
+  avatar        INTEGER NOT NULL DEFAULT 0,  -- index into public/avatars
   rep           INTEGER NOT NULL DEFAULT 0,
   points        INTEGER NOT NULL DEFAULT 20,
   last_allowance TEXT,                       -- ISO date of last daily 5
@@ -137,10 +138,16 @@ CREATE TABLE IF NOT EXISTS sessions (
 // Older deployments created `tips.market_id` as NOT NULL, back when every tip was
 // tied to a resolved call. Tipping is now general user-to-user, so market_id must
 // accept NULL. SQLite can't drop a column constraint in place — rebuild the table.
+//
+// This is the only migration that destroys anything, so it runs inside a
+// transaction: a deploy that dies between the copy and the rename must roll back
+// to the old table rather than leave the tips gone.
 {
   const marketIdCol = db.prepare("PRAGMA table_info(tips)").all().find(c => c.name === 'market_id');
   if (marketIdCol && marketIdCol.notnull) {
-    db.exec(`
+    db.exec('BEGIN IMMEDIATE');
+    try {
+      db.exec(`
       CREATE TABLE tips_new (
         id         INTEGER PRIMARY KEY,
         market_id  INTEGER REFERENCES markets(id),
@@ -158,6 +165,21 @@ CREATE TABLE IF NOT EXISTS sessions (
       ALTER TABLE tips_new RENAME TO tips;
       CREATE INDEX IF NOT EXISTS idx_tips_pending ON tips(verified, failed_reason);
     `);
+      db.exec('COMMIT');
+    } catch (e) {
+      db.exec('ROLLBACK');
+      throw e;
+    }
+  }
+}
+
+// Accounts predate profile pictures. Give everyone who already exists one, spread
+// across the set rather than all landing on the same bird.
+{
+  const cols = db.prepare('PRAGMA table_info(users)').all().map(c => c.name);
+  if (!cols.includes('avatar')) {
+    db.exec('ALTER TABLE users ADD COLUMN avatar INTEGER NOT NULL DEFAULT 0');
+    db.exec('UPDATE users SET avatar = ABS(RANDOM()) % 15');
   }
 }
 

@@ -9,7 +9,9 @@ const S = {
   me: null,
   step: 0,
   username: '',
+  avatar: Math.floor(Math.random() * 15),
   niches: new Set(),
+  pendingFollows: new Set(),
   tab: 'feed',
   category: null,
   feedState: 'open',
@@ -44,7 +46,7 @@ async function api(path, { method = 'GET', body } = {}) {
 
 // ---------- onboarding ----------------------------------------------------
 
-const dots = n => `<div class="dots">${[0, 1, 2, 3].map(i => `<i class="${i === n ? 'on' : ''}"></i>`).join('')}</div>`;
+const dots = n => `<div class="dots">${[0, 1, 2, 3, 4].map(i => `<i class="${i === n ? 'on' : ''}"></i>`).join('')}</div>`;
 
 function screenWelcome() {
   return h`
@@ -75,10 +77,28 @@ function screenUsername() {
     </div>`;
 }
 
-function screenNiches() {
+function screenAvatar() {
   return h`
     <div class="glow"></div><div class="pad">
       ${dots(2)}
+      <div class="mid">
+        <h2>Pick a face</h2>
+        <p class="sub">One is already picked for you. Change it if you like.</p>
+        <div class="avgrid">
+          ${Array.from({ length: AVATAR_COUNT }, (_, i) => `
+            <span class="avpick ${S.avatar === i ? 'sel' : ''}" data-avatar="${i}">
+              <img src="/avatars/${String(i).padStart(2, '0')}.jpg" alt="" decoding="async">
+            </span>`).join('')}
+        </div>
+      </div>
+      <div class="foot"><button class="cta" data-go="3">Continue</button></div>
+    </div>`;
+}
+
+function screenNiches() {
+  return h`
+    <div class="glow"></div><div class="pad">
+      ${dots(3)}
       <div class="mid">
         <h2>What do you want to be right about?</h2>
         <p class="sub">Select all that apply</p>
@@ -91,7 +111,7 @@ function screenNiches() {
         </div>
       </div>
       <div class="foot">
-        <button class="cta" data-go="3" ${S.niches.size ? '' : 'disabled'}>Continue</button>
+        <button class="cta" data-go="4" ${S.niches.size ? '' : 'disabled'}>Continue</button>
         <p class="note">${S.niches.size} selected</p>
       </div>
     </div>`;
@@ -100,16 +120,16 @@ function screenNiches() {
 function screenFollow(people) {
   const list = people.length ? people.map(p => `
     <div class="row">
-      ${avatar(p.username)}
-      <span class="rm"><b>@${esc(p.username)}</b><s>${p.played} calls settled</s></span>
+      ${avatar(p.username, p.avatar)}
+      <span class="rm"><b>@${esc(p.username)}</b><s>${p.posts} call${p.posts === 1 ? '' : 's'} · ${p.followers} follower${p.followers === 1 ? '' : 's'}</s></span>
       <span class="repn">${p.rep}</span>
       <button class="fb" data-follow="${esc(p.username)}">Follow</button>
     </div>`).join('')
-    : `<div class="empty">Nobody has a record yet.<br>You could be the first.</div>`;
+    : `<div class="empty">Nobody else is here yet.<br>You could be the first.</div>`;
 
   return h`
     <div class="glow"></div><div class="pad">
-      ${dots(3)}
+      ${dots(4)}
       <div class="mid">
         <h2>Follow people with a record</h2>
         <p class="sub">to seed your feed</p>
@@ -123,52 +143,25 @@ function screenFollow(people) {
 }
 
 // ---------- avatars -------------------------------------------------------
-// Generated, never fetched: same username always gets the same face, and the
-// whole set shares one style so a feed of strangers still looks like one app.
 
-const AV_INK = [
-  ['#3D8BFF', '#2FD186'], ['#FFC94A', '#E07E06'], ['#8B5CF6', '#3D8BFF'],
-  ['#2FD186', '#0EA5A5'], ['#FF7A7A', '#FFB92C'], ['#F472B6', '#8B5CF6'],
-  ['#22D3EE', '#3D8BFF'], ['#A3E635', '#2FD186'], ['#FB923C', '#FF5C5C'],
-  ['#A78BFA', '#22D3EE'], ['#34D399', '#3D8BFF'], ['#FDE047', '#FB923C'],
-];
+const AVATAR_COUNT = 15;
 
-// The motif is always a hexagon — the shape the rest of the app is built from —
-// varied by how it sits behind the initial rather than by being a different shape.
-const AV_MOTIF = [
-  '<polygon points="20,-2 38,8 38,28 20,38 2,28 2,8" opacity=".18"/>',
-  '<circle cx="31" cy="10" r="15" opacity=".16"/>',
-  '<polygon points="20,4 34,12 34,28 20,36 6,28 6,12" opacity=".14"/>',
-  '<rect x="-6" y="22" width="52" height="26" opacity=".15"/>',
-];
-
+/** Everyone has a picture. It comes from the account, but a username-derived
+ *  fallback keeps older rows and mid-signup previews from rendering an empty
+ *  hole while the real one is still being chosen. */
 const avHash = s => {
   let h = 0;
-  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0;
+  for (let i = 0; i < String(s).length; i++) h = (h * 31 + String(s).charCodeAt(i)) | 0;
   return Math.abs(h);
 };
 
-function avatar(username, extra = '') {
-  const u = String(username || '?');
-  const n = avHash(u.toLowerCase());
-  const [a, b] = AV_INK[n % AV_INK.length];
-  const motif = AV_MOTIF[(n >> 5) % AV_MOTIF.length];
-  const initial = (u.match(/[a-z0-9]/i) || ['?'])[0].toUpperCase();
-  // Derived from the same hash as the artwork, so identical ids always mean
-  // identical contents even if two names collide.
-  const id = `av${n.toString(36)}`;
+const avatarIndex = (n, username) =>
+  Number.isInteger(n) && n >= 0 && n < AVATAR_COUNT ? n : avHash(String(username || '?').toLowerCase()) % AVATAR_COUNT;
 
-  return `<span class="av ${extra}" data-av="${esc(u)}">
-    <svg viewBox="0 0 40 40" aria-hidden="true">
-      <defs><linearGradient id="${id}" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0" stop-color="${a}"/><stop offset="1" stop-color="${b}"/>
-      </linearGradient></defs>
-      <rect width="40" height="40" fill="url(#${id})"/>
-      <g fill="#fff">${motif}</g>
-      <text x="20" y="21" text-anchor="middle" dominant-baseline="central"
-        font-family="Archivo, system-ui, sans-serif" font-weight="800" font-size="19"
-        fill="rgba(255,255,255,.96)">${esc(initial)}</text>
-    </svg></span>`;
+function avatar(username, index, extra = '') {
+  const i = avatarIndex(index, username);
+  return `<span class="av ${extra}">
+    <img src="/avatars/${String(i).padStart(2, '0')}.jpg" alt="" loading="lazy" decoding="async"></span>`;
 }
 
 // ---------- feed ----------------------------------------------------------
@@ -193,7 +186,7 @@ function postHtml(m) {
   const committed = m.committed;
   return h`
     <div class="post" data-market="${m.id}">
-      <div class="ph">${avatar(m.creator?.username)}<b data-viewuser="${esc(m.creator?.username || '')}">@${esc(m.creator?.username || '')}</b>
+      <div class="ph">${avatar(m.creator?.username, m.creator?.avatar)}<b data-viewuser="${esc(m.creator?.username || '')}">@${esc(m.creator?.username || '')}</b>
         <span class="rp">${m.creator?.rep ?? 0}</span>
         <s class="${left.soon ? 'soon' : ''}">${left.text}</s></div>
       ${tipPoolPill(m)}
@@ -223,7 +216,7 @@ const tipPoolPill = m => m.tipPool
 function resolvedHtml(m) {
   if (m.state === 'void') {
     return h`<div class="post"><span class="stamp">Void</span>
-      <div class="ph">${avatar(m.creator?.username)}<b>@${esc(m.creator?.username || '')}</b></div>
+      <div class="ph">${avatar(m.creator?.username, m.creator?.avatar)}<b>@${esc(m.creator?.username || '')}</b></div>
       <p class="q">${esc(m.said || m.question)}</p>
       <p class="src"><u></u>${esc(m.void_reason || 'Could not be settled')}</p>
       <p class="lock">ALL STAKES REFUNDED · NO REPUTATION MOVED</p></div>`;
@@ -232,7 +225,7 @@ function resolvedHtml(m) {
   const d = m.myRepDelta;
   return h`
     <div class="post" data-market="${m.id}"><span class="stamp">Resolved</span>
-      <div class="ph">${avatar(m.creator?.username)}<b data-viewuser="${esc(m.creator?.username || '')}">@${esc(m.creator?.username || '')}</b>
+      <div class="ph">${avatar(m.creator?.username, m.creator?.avatar)}<b data-viewuser="${esc(m.creator?.username || '')}">@${esc(m.creator?.username || '')}</b>
         <span class="rp">${m.creator?.rep ?? 0}</span></div>
       <p class="q">${esc(m.said || m.question)}</p>
       <div class="bar"><u class="y" style="width:${yes}%"></u><u class="n" style="width:${100 - yes}%"></u></div>
@@ -369,16 +362,16 @@ function screenExplore(board) {
     <div class="glow"></div>
     <div class="top"><span class="logo">Explore</span><span class="pts">${S.me?.points ?? 0} PTS</span></div>
     <div class="feed">
-      <div class="section" style="padding:0 0 2px"><h3>Top predictors</h3></div>
-      ${board.length ? board.map((p, i) => `
+      <div class="section" style="padding:0 0 2px"><h3>People to follow</h3></div>
+      ${board.length ? board.map(p => `
         <div class="row" data-viewuser="${esc(p.username)}">
-          <span class="rank">${i + 1}</span>
-          ${avatar(p.username)}
-          <span class="rm"><b>@${esc(p.username)}</b><s>${p.played} settled · ${p.average} avg</s></span>
+          ${avatar(p.username, p.avatar)}
+          <span class="rm"><b>@${esc(p.username)}</b>
+            <s>${p.posts} call${p.posts === 1 ? '' : 's'} · ${p.followers} follower${p.followers === 1 ? '' : 's'}</s></span>
           <span class="repn">${p.rep}</span>
-          <button class="fb" data-follow="${esc(p.username)}">Follow</button>
+          <button class="fb" data-toggle-follow="${esc(p.username)}">Follow</button>
         </div>`).join('')
-        : `<div class="empty">Nobody has a qualifying record yet.<br>Keep predicting — you could be first.</div>`}
+        : `<div class="empty">You're following everyone here.<br>Your feed is as full as it gets.</div>`}
     </div>
     ${tabsHtml()}`;
 }
@@ -432,9 +425,16 @@ function screenProfile(p, isSelf = true) {
         : `<span class="tipicon" data-tip-profile="${esc(p.username)}" title="Tip @${esc(p.username)}">${TIP_ICON}</span>`}
     </div>
     <div class="profilehead">
-      ${avatar(p.username)}
+      ${avatar(p.username, p.avatar)}
       <h2>@${esc(p.username)}</h2>
-      <p class="sub" style="margin-bottom:0">Joined ${new Date(p.joined).toLocaleDateString()}</p>
+      <p class="sub" style="margin-bottom:10px">Joined ${new Date(p.joined).toLocaleDateString()}</p>
+      <div class="socialrow">
+        <span class="soc"><b>${p.followers}</b><s>Followers</s></span>
+        <span class="soc"><b>${p.following}</b><s>Following</s></span>
+      </div>
+      ${p.isMe ? '' : `
+        <button class="followbtn ${p.isFollowing ? 'on' : ''}" data-toggle-follow="${esc(p.username)}">
+          ${p.isFollowing ? 'Following' : 'Follow'}</button>`}
     </div>
     <div class="statsrow">
       <div class="stat"><b>${p.rep}</b><s>Reputation</s></div>
@@ -642,10 +642,10 @@ function tipSheetHtml() {
 
 async function render() {
   if (!S.me) {
-    const screens = [screenWelcome, screenUsername, screenNiches];
-    if (S.step < 3) el.innerHTML = screens[S.step]();
+    const screens = [screenWelcome, screenUsername, screenAvatar, screenNiches];
+    if (S.step < 4) el.innerHTML = screens[S.step]();
     else {
-      const people = await api('/leaderboard').catch(() => []);
+      const people = await api('/explore').catch(() => []);
       el.innerHTML = screenFollow(people);
     }
     return bind();
@@ -655,7 +655,7 @@ async function render() {
     S.owed = owed;
     el.innerHTML = screenWallet(w, owed);
   } else if (S.tab === 'explore') {
-    const board = await api('/leaderboard').catch(() => []);
+    const board = await api('/explore').catch(() => []);
     el.innerHTML = screenExplore(board);
   } else if (S.tab === 'positions') {
     const positions = await api('/positions').catch(() => []);
@@ -714,17 +714,42 @@ function bind() {
 
   on('#finish, #finish2', 'click', async () => {
     try {
-      const r = await signIn({ username: S.username });
+      const r = await signIn({ username: S.username, avatar: S.avatar });
       S.token = r.token; localStorage.setItem('predtube.token', r.token);
-      S.me = r.user; render();
+      S.me = r.user;
+      // Follows chosen during onboarding could not be sent until the account existed.
+      for (const u of S.pendingFollows) {
+        await api(`/users/${encodeURIComponent(u)}/follow`, { method: 'POST' }).catch(() => {});
+      }
+      S.pendingFollows.clear();
+      render();
     } catch (err) { alert(err.message); }
   });
 
+  on('[data-avatar]', 'click', e => { S.avatar = Number(e.currentTarget.dataset.avatar); render(); });
+
+  // Onboarding runs before there is a session, so these are remembered and
+  // replayed once the account exists.
   on('[data-follow]', 'click', async e => {
     e.stopPropagation();
-    const u = e.currentTarget.dataset.follow;
-    e.currentTarget.classList.add('on'); e.currentTarget.textContent = 'Following';
-    if (S.token) await api(`/users/${u}/follow`, { method: 'POST' }).catch(() => {});
+    const btn = e.currentTarget;
+    const u = btn.dataset.follow;
+    const on = btn.classList.toggle('on');
+    btn.textContent = on ? 'Following' : 'Follow';
+    on ? S.pendingFollows.add(u) : S.pendingFollows.delete(u);
+  });
+
+  on('[data-toggle-follow]', 'click', async e => {
+    e.stopPropagation();
+    const btn = e.currentTarget;
+    const u = btn.dataset.toggleFollow;
+    const following = btn.classList.contains('on');
+    btn.disabled = true;
+    try {
+      await api(`/users/${encodeURIComponent(u)}/follow`, { method: following ? 'DELETE' : 'POST' });
+      // Who you follow decides the feed, so the whole view has to be rebuilt.
+      render();
+    } catch (err) { btn.disabled = false; alert(err.message); }
   });
 
   on('[data-viewuser]', 'click', e => {
@@ -931,9 +956,10 @@ function bind() {
 /** Sign in by proving we hold the key for this address: fetch a nonce, sign it
  *  through Nimiq Pay, send the proof. Outside Nimiq Pay there is nothing to sign
  *  with, so the server's dev bypass handles it (never enabled in production). */
-async function signIn({ username } = {}) {
+async function signIn({ username, avatar } = {}) {
   const body = { address: wallet.state.address, deviceHash: wallet.state.deviceHash };
   if (username) body.username = username;
+  if (Number.isInteger(avatar)) body.avatar = avatar;
 
   if (wallet.state.inNimiqPay) {
     const { message } = await api('/challenge', { method: 'POST', body: { address: wallet.state.address } });

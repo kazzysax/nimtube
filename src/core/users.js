@@ -27,8 +27,19 @@ export function usernameAvailable(username) {
   return { ok: true };
 }
 
+/** How many profile pictures live in public/avatars. */
+export const AVATAR_COUNT = 15;
+
+const pickAvatar = n => {
+  const i = Number(n);
+  // Anything unusable — absent, out of range, a string — becomes a random one
+  // rather than defaulting everybody to the same bird.
+  return Number.isInteger(i) && i >= 0 && i < AVATAR_COUNT
+    ? i : Math.floor(Math.random() * AVATAR_COUNT);
+};
+
 /** The Nimiq address is the account. Usernames are claimed once and never recycled. */
-export function findOrCreate({ address, username, deviceHash }) {
+export function findOrCreate({ address, username, deviceHash, avatar }) {
   const existing = db.prepare('SELECT * FROM users WHERE address = ?').get(address);
   if (existing) {
     if (deviceHash && !existing.device_hash) {
@@ -41,9 +52,9 @@ export function findOrCreate({ address, username, deviceHash }) {
   if (!check.ok) throw Object.assign(new Error(check.reason), { status: 400 });
 
   const info = db.prepare(
-    `INSERT INTO users (address, username, username_ci, device_hash, points)
-     VALUES (?, ?, ?, ?, 20)`
-  ).run(address, username, fold(username), deviceHash || null);
+    `INSERT INTO users (address, username, username_ci, device_hash, points, avatar)
+     VALUES (?, ?, ?, ?, 20, ?)`
+  ).run(address, username, fold(username), deviceHash || null, pickAvatar(avatar));
 
   return db.prepare('SELECT * FROM users WHERE id = ?').get(info.lastInsertRowid);
 }
@@ -74,8 +85,8 @@ export function claimAllowance(user) {
 /** Public profile. Stake sizes, weights and points balance are never exposed —
  *  per-market rep is withheld too, since rep plus the closing bar would let anyone
  *  reconstruct how much someone staked. */
-export function publicProfile(username) {
-  const u = db.prepare('SELECT id, username, address, rep, created_at FROM users WHERE username_ci = ?')
+export function publicProfile(username, viewer = null) {
+  const u = db.prepare('SELECT id, username, address, rep, avatar, created_at FROM users WHERE username_ci = ?')
     .get(fold(username));
   if (!u) return null;
 
@@ -102,12 +113,23 @@ export function publicProfile(username) {
     SELECT id, COALESCE(raw_text, question) AS said, question, category, state, outcome, created_at
     FROM markets WHERE creator_id = ? ORDER BY created_at DESC LIMIT 30`).all(u.id);
 
+  const followers = db.prepare('SELECT COUNT(*) n FROM follows WHERE followee_id = ?').get(u.id).n;
+  const following = db.prepare('SELECT COUNT(*) n FROM follows WHERE follower_id = ?').get(u.id).n;
+  const isFollowing = viewer
+    ? !!db.prepare('SELECT 1 FROM follows WHERE follower_id = ? AND followee_id = ?').get(viewer.id, u.id)
+    : false;
+
   return {
     username: u.username,
     // Needed to tip them, and public on chain regardless.
     address: u.address,
     rep: u.rep,
+    avatar: u.avatar,
     joined: u.created_at,
+    followers,
+    following,
+    isFollowing,
+    isMe: !!viewer && viewer.id === u.id,
     played,
     correct,
     wins: correct,

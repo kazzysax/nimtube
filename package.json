@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node --env-file-if-exists=.env src/server.js",
     "postinstall": "node scripts/vendor-sdk.mjs",
-    "test": "node test/math.test.mjs && node test/terminal.test.mjs && node test/auth.test.mjs && node test/tips.test.mjs && node test/tippool.test.mjs && node test/wallet.test.mjs && node test/e2e.test.mjs"
+    "test": "node test/math.test.mjs && node test/terminal.test.mjs && node test/auth.test.mjs && node test/tips.test.mjs && node test/tippool.test.mjs && node test/social.test.mjs && node test/wallet.test.mjs && node test/e2e.test.mjs"
   },
   "keywords": [],
   "author": "",

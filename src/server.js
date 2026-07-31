@@ -5,7 +5,7 @@ import { dirname, join } from 'path';
 import { db } from './core/db.js';
 import {
   findOrCreate, issueSession, userForToken, claimAllowance,
-  publicProfile, usernameAvailable,
+  publicProfile, usernameAvailable, fold,
 } from './core/users.js';
 import { createMarket, placeWager, viewMarket, feed, myPositions, scheduleFrom } from './core/markets.js';
 import { gate as gateText } from './core/terminal.js';
@@ -60,7 +60,7 @@ app.post('/api/challenge', wrap((req, res) => {
  *  deviceHash comes from requestDeviceIdentifier() and is stored purely as an
  *  anti-alt signal — the docs are explicit that it must never be an identity. */
 app.post('/api/session', wrap((req, res) => {
-  const { address, username, deviceHash, publicKey, signature, message } = req.body || {};
+  const { address, username, deviceHash, avatar, publicKey, signature, message } = req.body || {};
   if (!address) throw Object.assign(new Error('address required'), { status: 400 });
 
   let proven = address;
@@ -73,12 +73,12 @@ app.post('/api/session', wrap((req, res) => {
   const existing = db.prepare('SELECT * FROM users WHERE address = ?').get(proven);
   if (!existing && !username) return res.json({ needsUsername: true });
 
-  const user = findOrCreate({ address: proven, username, deviceHash });
+  const user = findOrCreate({ address: proven, username, deviceHash, avatar });
   const token = issueSession(user.id);
   const allowance = claimAllowance(user);
   res.json({
     token,
-    user: { username: user.username, rep: user.rep, points: allowance.points },
+    user: { username: user.username, rep: user.rep, points: allowance.points, avatar: user.avatar },
     dailyClaimed: allowance.claimed,
   });
 }));
@@ -87,7 +87,7 @@ app.get('/api/username/:name', wrap((req, res) => res.json(usernameAvailable(req
 
 app.get('/api/me', wrap((req, res) => {
   if (!need(req, res)) return;
-  const u = db.prepare('SELECT username, rep, points FROM users WHERE id = ?').get(req.user.id);
+  const u = db.prepare('SELECT username, rep, points, avatar FROM users WHERE id = ?').get(req.user.id);
   res.json(u);
 }));
 
@@ -98,6 +98,7 @@ app.get('/api/feed', wrap((req, res) => {
     user: req.user,
     category: req.query.category,
     state: req.query.state || 'open',
+    scope: req.query.scope === 'all' ? 'all' : 'following',
   }));
 }));
 
@@ -248,18 +249,57 @@ app.get('/api/positions', wrap((req, res) => {
 // ---- people --------------------------------------------------------------
 
 app.get('/api/users/:username', wrap((req, res) => {
-  const p = publicProfile(req.params.username);
+  const p = publicProfile(req.params.username, req.user);
   if (!p) return res.status(404).json({ error: 'No such user' });
   res.json(p);
 }));
 
+const followTarget = (req, res) => {
+  const t = db.prepare('SELECT id, username FROM users WHERE username_ci = ?').get(fold(req.params.username));
+  if (!t) { res.status(404).json({ error: 'No such user' }); return null; }
+  if (t.id === req.user.id) {
+    throw Object.assign(new Error('You cannot follow yourself'), { status: 400 });
+  }
+  return t;
+};
+
+const followCounts = id => ({
+  followers: db.prepare('SELECT COUNT(*) n FROM follows WHERE followee_id = ?').get(id).n,
+});
+
 app.post('/api/users/:username/follow', wrap((req, res) => {
   if (!need(req, res)) return;
-  const target = db.prepare('SELECT id FROM users WHERE username = ?').get(req.params.username);
-  if (!target) return res.status(404).json({ error: 'No such user' });
+  const target = followTarget(req, res);
+  if (!target) return;
   db.prepare('INSERT OR IGNORE INTO follows (follower_id, followee_id) VALUES (?,?)')
     .run(req.user.id, target.id);
-  res.json({ following: true });
+  res.json({ following: true, ...followCounts(target.id) });
+}));
+
+app.delete('/api/users/:username/follow', wrap((req, res) => {
+  if (!need(req, res)) return;
+  const target = followTarget(req, res);
+  if (!target) return;
+  db.prepare('DELETE FROM follows WHERE follower_id = ? AND followee_id = ?')
+    .run(req.user.id, target.id);
+  res.json({ following: false, ...followCounts(target.id) });
+}));
+
+/** Explore is discovery: people you are not already following, ranked by record
+ *  but never empty — a new app has nobody with ten settled calls yet. */
+app.get('/api/explore', wrap((req, res) => {
+  const me = req.user?.id ?? -1;
+  res.json(db.prepare(`
+    SELECT u.username, u.rep, u.avatar,
+           (SELECT COUNT(*) FROM wagers w WHERE w.user_id = u.id AND w.settled = 1) AS played,
+           (SELECT COUNT(*) FROM follows f WHERE f.followee_id = u.id) AS followers,
+           (SELECT COUNT(*) FROM markets mk WHERE mk.creator_id = u.id) AS posts
+    FROM users u
+    WHERE u.id != ?
+      AND u.id NOT IN (SELECT followee_id FROM follows WHERE follower_id = ?)
+    ORDER BY u.rep DESC, followers DESC, posts DESC
+    LIMIT 50
+  `).all(me, me));
 }));
 
 /** Ranked by average rep per market, with a floor on markets played so a
