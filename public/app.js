@@ -43,12 +43,11 @@ function screenWelcome() {
       ${dots(0)}
       <div class="mid">
         <p class="brand">Pred<span>Tube</span></p>
-        <p class="sub">Take a side. Live with it.</p>
+        <p class="sub">TRACK CONVICTION WITH SOCIAL REPUTATION</p>
         <p class="sub2">Social · Public · Reputation</p>
       </div>
       <div class="foot">
         <button class="cta" data-go="1">Get started</button>
-        <p class="note">${wallet.state.inNimiqPay ? 'Wallet connected' : 'Dev mode'} · <b>20 points</b> waiting</p>
       </div>
     </div>`;
 }
@@ -61,7 +60,7 @@ function screenUsername() {
         <h2>Claim your name</h2>
         <p class="sub">Every call you make gets filed under it.</p>
         <input id="uname" placeholder="username" autocomplete="off" value="${esc(S.username)}" />
-        <p class="hint" id="uhint">Yours permanently. Names are never recycled.</p>
+        <p class="hint" id="uhint"></p>
       </div>
       <div class="foot"><button class="cta" id="unext" disabled>Continue</button></div>
     </div>`;
@@ -199,9 +198,8 @@ function screenFeed() {
   const chips = ['All', ...CATEGORIES];
   return h`
     <div class="glow"></div>
-    <div class="top">
-      <span class="logo">Pred<span>Tube</span></span>
-      <span class="pts">${S.me?.points ?? 0} PTS</span>
+    <div class="top" style="justify-content:center">
+      <span class="logo">Pred<span>TUBE</span></span>
     </div>
     <div class="chips">
       <span class="chip ${S.feedState === 'resolved' ? 'on' : ''}" data-state="resolved">Resolved</span>
@@ -217,14 +215,33 @@ function screenFeed() {
 }
 
 function screenWallet(w) {
+  const bal = (w.balanceNim !== null && w.balanceNim !== undefined) ? w.balanceNim.toFixed(2) : '—';
   return h`
     <div class="glow"></div>
     <div class="top"><span class="logo">Wallet</span><span class="pts">${w.points} PTS</span></div>
-    <div class="feed">
-      <div class="post"><p class="src"><u></u>Points</p>
-        <p class="q">${w.points} points</p>
-        <p class="lock">NO CASH VALUE · CANNOT BE BOUGHT OR SOLD</p></div>
-      <div class="post"><p class="src"><u></u>Tips</p>
+    <div class="tiles">
+      <div class="tile">
+        <span class="tlabel">NIM balance</span>
+        <span class="tval">${bal}</span>
+      </div>
+      <div class="tile action" id="wallettip">
+        <span class="tlabel">Tip</span>
+        <span class="tval green">◆</span>
+        <span class="ttip">Reward a correct call</span>
+      </div>
+    </div>
+
+    <div class="section"><h3>Assets</h3></div>
+    <div class="feed" style="padding-top:0">
+      <div class="row"><span class="av"></span>
+        <span class="rm"><b>NIM</b><s>On-chain balance</s></span>
+        <span class="repn">${bal}</span></div>
+      <div class="row"><span class="av"></span>
+        <span class="rm"><b>Points</b><s>No cash value · cannot be bought or sold</s></span>
+        <span class="repn">${w.points}</span></div>
+
+      <div class="section" style="padding:0"><h3>Tip info</h3></div>
+      <div class="post">
         <div class="verdict">
           <div><div class="big">${w.tipsReceived}</div><div class="lbl">NIM confirmed</div></div>
           <div class="rt">${w.tipsSent} NIM sent</div>
@@ -232,7 +249,9 @@ function screenWallet(w) {
         ${w.tipsPending ? `<p class="lock">${w.tipsPending} NIM AWAITING CONFIRMATION</p>` : ''}
         ${(w.rejected || []).map(x => `<p class="lock" style="color:var(--no)">REJECTED · ${esc(x.failed_reason)}</p>`).join('')}
       </div>
-      <div class="post"><p class="src"><u></u>Bounties won</p>
+
+      <div class="section" style="padding:0"><h3>Bounties won</h3></div>
+      <div class="post">
         ${w.bounties.length ? w.bounties.map(b =>
           `<p class="q">${b.amount_nim} NIM${b.paid ? '' : ' · pending'}</p>`).join('')
           : '<div class="empty">None yet.</div>'}</div>
@@ -240,9 +259,110 @@ function screenWallet(w) {
     ${tabsHtml()}`;
 }
 
+function screenExplore(board) {
+  return h`
+    <div class="glow"></div>
+    <div class="top"><span class="logo">Explore</span><span class="pts">${S.me?.points ?? 0} PTS</span></div>
+    <div class="feed">
+      <div class="section" style="padding:0 0 2px"><h3>Top predictors</h3></div>
+      ${board.length ? board.map((p, i) => `
+        <div class="row">
+          <span class="rank">${i + 1}</span>
+          <span class="av"></span>
+          <span class="rm"><b>@${esc(p.username)}</b><s>${p.played} settled · ${p.average} avg</s></span>
+          <span class="repn">${p.rep}</span>
+          <button class="fb" data-follow="${esc(p.username)}">Follow</button>
+        </div>`).join('')
+        : `<div class="empty">Nobody has a qualifying record yet.<br>Keep predicting — you could be first.</div>`}
+    </div>
+    ${tabsHtml()}`;
+}
+
+function screenPositions(positions) {
+  const rows = positions.map(p => {
+    const settled = !!p.settled;
+    const won = settled && p.outcome && p.side === p.outcome.toLowerCase();
+    return `
+      <div class="post">
+        <div class="blab" style="margin-bottom:10px">
+          <span>${esc(p.category).toUpperCase()}</span>
+          <span>${p.state === 'open' ? timeLeft(p.closes_at) : p.state.toUpperCase()}</span>
+        </div>
+        <p class="q">${esc(p.question)}</p>
+        <div class="blab">
+          <span class="${p.side === 'yes' ? 'yl' : 'nl'}">${p.side.toUpperCase()} · ${p.stake} PTS</span>
+          <span class="${settled ? (won ? 'yl' : 'nl') : ''}">${settled
+            ? `${won ? 'WON' : 'LOST'} · ${p.rep_delta > 0 ? '+' : ''}${p.rep_delta ?? 0} REP`
+            : 'OPEN'}</span>
+        </div>
+      </div>`;
+  }).join('');
+  return h`
+    <div class="glow"></div>
+    <div class="top"><span class="logo">Positions</span><span class="pts">${S.me?.points ?? 0} PTS</span></div>
+    <div class="feed">
+      ${positions.length ? rows : `<div class="empty">No wagers yet.<br>Take a side on something in the feed.</div>`}
+    </div>
+    ${tabsHtml()}`;
+}
+
+function screenProfile(p) {
+  if (!p) return h`
+    <div class="glow"></div>
+    <div class="top"><span class="logo">Profile</span></div>
+    <div class="feed"><div class="empty">Couldn't load your profile.</div></div>
+    ${tabsHtml()}`;
+
+  const posts = p.posts || [];
+  return h`
+    <div class="glow"></div>
+    <div class="top"><span class="logo">Profile</span><span class="pts">${S.me?.points ?? 0} PTS</span></div>
+    <div class="profilehead">
+      <span class="av"></span>
+      <h2>@${esc(p.username)}</h2>
+      <p class="sub" style="margin-bottom:0">Joined ${new Date(p.joined).toLocaleDateString()}</p>
+    </div>
+    <div class="statsrow">
+      <div class="stat"><b>${p.rep}</b><s>Reputation</s></div>
+      <div class="stat"><b>${p.hitRate === null ? '—' : p.hitRate + '%'}</b><s>Hit rate</s></div>
+      <div class="stat"><b>${p.contrarianWins}</b><s>Contrarian</s></div>
+    </div>
+    <div class="statsrow">
+      <div class="stat"><b style="color:var(--yes)">${p.wins}</b><s>Wins</s></div>
+      <div class="stat"><b style="color:var(--no)">${p.losses}</b><s>Losses</s></div>
+      <div class="stat"><b>${p.played}</b><s>Played</s></div>
+    </div>
+    <div class="feed" style="padding-top:0">
+      <div class="section" style="padding:0 0 2px"><h3>His posts</h3></div>
+      ${posts.length ? posts.map(m => `
+        <div class="post">
+          <p class="q">${esc(m.question)}</p>
+          <div class="blab">
+            <span>${esc(m.category).toUpperCase()}</span>
+            <span>${esc(m.state).toUpperCase()}${m.outcome ? ' · ' + esc(m.outcome) : ''}</span>
+          </div>
+        </div>`).join('')
+        : `<div class="empty">No calls posted yet.</div>`}
+    </div>
+    ${tabsHtml()}`;
+}
+
+const TAB_ICONS = {
+  feed: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="3" y="4" width="18" height="7" rx="1.6"/><rect x="3" y="14" width="18" height="7" rx="1.6"/></svg>`,
+  explore: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="12" r="9"/><path d="M15.2 8.8l-2.1 6.1-6.1 2.1 2.1-6.1z"/></svg>`,
+  positions: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M4 20V11M12 20V4M20 20v-6"/></svg>`,
+  profile: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="8.2" r="3.6"/><path d="M4.5 20c1.4-4.2 4-5.8 7.5-5.8s6.1 1.6 7.5 5.8"/></svg>`,
+  wallet: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18"/><circle cx="16.3" cy="14" r="1.1" fill="currentColor" stroke="none"/></svg>`,
+};
+
 const TABS = [['feed', 'Feed'], ['explore', 'Explore'], ['positions', 'Positions'], ['profile', 'Profile'], ['wallet', 'Wallet']];
 const tabsHtml = () => `<div class="tabs">${TABS.map(([k, l]) =>
-  `<span class="tab ${S.tab === k ? 'on' : ''}" data-tab="${k}"><i></i>${l}</span>`).join('')}</div>`;
+  `<span class="tab ${S.tab === k ? 'on' : ''}" data-tab="${k}">${TAB_ICONS[k]}${l}</span>`).join('')}</div>`;
 
 // ---------- compose -------------------------------------------------------
 
@@ -276,6 +396,15 @@ async function render() {
   if (S.tab === 'wallet') {
     const w = await api('/wallet');
     el.innerHTML = screenWallet(w);
+  } else if (S.tab === 'explore') {
+    const board = await api('/leaderboard').catch(() => []);
+    el.innerHTML = screenExplore(board);
+  } else if (S.tab === 'positions') {
+    const positions = await api('/positions').catch(() => []);
+    el.innerHTML = screenPositions(positions);
+  } else if (S.tab === 'profile') {
+    const profile = await api('/users/' + encodeURIComponent(S.me.username)).catch(() => null);
+    el.innerHTML = screenProfile(profile);
   } else {
     const q = new URLSearchParams({ state: S.feedState, ...(S.category ? { category: S.category } : {}) });
     S.markets = await api('/feed?' + q).catch(() => []);
@@ -298,7 +427,7 @@ function bind() {
       S.username = uname.value.trim();
       clearTimeout(t);
       next.disabled = true;
-      if (!S.username) { hint.className = 'hint'; hint.textContent = 'Yours permanently. Names are never recycled.'; return; }
+      if (!S.username) { hint.className = 'hint'; hint.textContent = ''; return; }
       t = setTimeout(async () => {
         const r = await api('/username/' + encodeURIComponent(S.username)).catch(() => ({ ok: false, reason: '—' }));
         hint.className = 'hint ' + (r.ok ? 'good' : 'bad');
@@ -331,6 +460,7 @@ function bind() {
   });
 
   on('[data-tab]', 'click', e => { S.tab = e.currentTarget.dataset.tab; render(); });
+  on('#wallettip', 'click', () => { S.tab = 'feed'; S.feedState = 'resolved'; S.category = null; render(); });
   on('[data-cat]', 'click', e => { S.category = e.currentTarget.dataset.cat || null; S.feedState = 'open'; render(); });
   on('[data-state]', 'click', () => { S.feedState = S.feedState === 'resolved' ? 'open' : 'resolved'; render(); });
   on('[data-stake]', 'click', e => { S.stake = Number(e.currentTarget.dataset.stake); render(); });

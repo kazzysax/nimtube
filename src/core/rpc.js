@@ -43,6 +43,18 @@ export async function getTransactionByHash(hash) {
 
 export const getBlockNumber = () => rpc('getBlockNumber', []);
 
+/** Live NIM balance for an address, in NIM (not luna). Null when the RPC isn't
+ *  configured or the lookup fails — callers should treat that as "unknown",
+ *  never as zero. */
+export async function getAccountByAddress(address) {
+  try {
+    const acc = await rpc('getAccountByAddress', [address]);
+    return typeof acc?.balance === 'number' ? acc.balance / 1e5 : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Addresses come back in varying spacing and case; compare them flattened. */
 export const sameAddress = (a, b) =>
   String(a || '').replace(/\s+/g, '').toUpperCase() === String(b || '').replace(/\s+/g, '').toUpperCase();

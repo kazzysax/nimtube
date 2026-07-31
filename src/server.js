@@ -6,8 +6,9 @@ import {
   findOrCreate, issueSession, userForToken, claimAllowance,
   publicProfile, usernameAvailable,
 } from './core/users.js';
-import { createMarket, placeWager, viewMarket, feed } from './core/markets.js';
+import { createMarket, placeWager, viewMarket, feed, myPositions } from './core/markets.js';
 import { issueChallenge, verifyChallenge, devBypassAllowed } from './core/auth.js';
+import { getAccountByAddress } from './core/rpc.js';
 import * as resolverJob from './jobs/resolver.js';
 import * as tipJob from './jobs/tipwatcher.js';
 
@@ -120,6 +121,12 @@ app.post('/api/markets/:id/wager', wrap((req, res) => {
   res.json(placeWager(req.user, Number(req.params.id), side, Number(stake)));
 }));
 
+/** The wagers I've placed on other people's calls — my side of the book. */
+app.get('/api/positions', wrap((req, res) => {
+  if (!need(req, res)) return;
+  res.json(myPositions(req.user.id));
+}));
+
 // ---- people --------------------------------------------------------------
 
 app.get('/api/users/:username', wrap((req, res) => {
@@ -191,7 +198,7 @@ app.post('/api/markets/:id/tip', wrap((req, res) => {
   res.json({ ok: true, pendingVerification: true, marker: tipJob.tipMarker(marketId) });
 }));
 
-app.get('/api/wallet', wrap((req, res) => {
+app.get('/api/wallet', wrap(async (req, res) => {
   if (!need(req, res)) return;
   const sent = db.prepare('SELECT COALESCE(SUM(amount_nim),0) t FROM tips WHERE from_id=?').get(req.user.id).t;
   const recv = db.prepare('SELECT COALESCE(SUM(amount_nim),0) t FROM tips WHERE to_id=? AND verified=1').get(req.user.id).t;
@@ -202,8 +209,12 @@ app.get('/api/wallet', wrap((req, res) => {
     'SELECT tx_hash, failed_reason FROM tips WHERE from_id=? AND failed_reason IS NOT NULL ORDER BY created_at DESC LIMIT 10'
   ).all(req.user.id);
   const bounties = db.prepare('SELECT * FROM bounty_awards WHERE user_id=? ORDER BY created_at DESC').all(req.user.id);
-  const points = db.prepare('SELECT points FROM users WHERE id=?').get(req.user.id).points;
-  res.json({ points, tipsSent: sent, tipsReceived: recv, tipsPending: pendingIn, rejected, bounties });
+  const { points, address } = db.prepare('SELECT points, address FROM users WHERE id=?').get(req.user.id);
+  // Best-effort: a dev-mode address has nothing on chain to look up, and the RPC
+  // may simply not be configured. Either way the client shows "—", never a false 0.
+  const balanceNim = process.env.NIMIQ_RPC_URL && !address.startsWith('NQDEV')
+    ? await getAccountByAddress(address) : null;
+  res.json({ points, balanceNim, tipsSent: sent, tipsReceived: recv, tipsPending: pendingIn, rejected, bounties });
 }));
 
 // ---- ops -----------------------------------------------------------------

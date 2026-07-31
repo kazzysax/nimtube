@@ -97,6 +97,11 @@ export function publicProfile(username) {
     'SELECT COALESCE(SUM(amount_nim),0) AS total FROM tips WHERE to_id = ? AND verified = 1'
   ).get(u.id);
 
+  // The calls this user made — not the positions they took on other people's.
+  const posts = db.prepare(`
+    SELECT id, question, category, state, outcome, created_at
+    FROM markets WHERE creator_id = ? ORDER BY created_at DESC LIMIT 30`).all(u.id);
+
   return {
     username: u.username,
     // Needed to tip them, and public on chain regardless.
@@ -105,9 +110,12 @@ export function publicProfile(username) {
     joined: u.created_at,
     played,
     correct,
+    wins: correct,
+    losses: played - correct,
     hitRate: played ? Math.round((correct / played) * 100) : null,
     contrarianWins: contrarian,
     tipsReceived: tips.total,
     openPositions: open,
+    posts,
   };
 }

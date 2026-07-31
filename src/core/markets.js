@@ -176,6 +176,18 @@ export function settleMarket(marketId, outcome, log) {
   return { void: false, results: result.results };
 }
 
+/** Every wager this user has placed, newest first — their side of the book,
+ *  as opposed to the calls they authored (see users.js publicProfile.posts). */
+export function myPositions(userId, limit = 50) {
+  return db.prepare(`
+    SELECT m.id, m.question, m.category, m.state, m.outcome, m.closes_at,
+           w.side, w.stake, w.settled, w.rep_delta
+    FROM wagers w JOIN markets m ON m.id = w.market_id
+    WHERE w.user_id = ?
+    ORDER BY w.placed_at DESC LIMIT ?
+  `).all(userId, limit);
+}
+
 export function feed({ user, category, state = 'open', limit = 30 }) {
   const rows = db.prepare(`
     SELECT m.id FROM markets m
