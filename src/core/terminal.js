@@ -36,17 +36,30 @@ async function callClaude({ system, user, tools, maxTokens = 1500 }) {
     .join('\n')
     .trim();
 
-  return { text, raw: data };
+  return { text, stopReason: data.stop_reason, raw: data };
 }
 
-function parseJson(text) {
+/** `label` is which call this was (gate/resolve) — on failure it goes into both
+ *  the server log and the thrown message, so a bad response is traceable
+ *  without having to SSH in and guess which of the two calls produced it. */
+function parseJson(text, { label = 'terminal', stopReason } = {}) {
   const clean = text.replace(/^```(?:json)?/gm, '').replace(/```$/gm, '').trim();
   try {
     return JSON.parse(clean);
   } catch {
     const m = clean.match(/\{[\s\S]*\}/);
-    if (m) return JSON.parse(m[0]);
-    throw new Error('Terminal did not return JSON');
+    if (m) {
+      try { return JSON.parse(m[0]); } catch { /* fall through to the log below */ }
+    }
+
+    // stop_reason tells us whether this is "the model rambled instead of
+    // returning JSON" or "the response was cut off before it got there" —
+    // very different problems, and worth not conflating in the log.
+    const cause = stopReason === 'max_tokens'
+      ? 'response was cut off before finishing (hit max_tokens)'
+      : 'response contained no parseable JSON';
+    console.error(`[terminal] ${label}: ${cause}. Raw text (first 500 chars):\n${text.slice(0, 500)}`);
+    throw new Error(`Terminal did not return JSON (${cause})`);
   }
 }
 
@@ -144,11 +157,11 @@ or
 {"status":"rejected","reason":"","suggested_fix":{ ...same fields as approved, or null }}`;
 
 export async function gate(rawText, { now = new Date().toISOString(), timezone = 'UTC' } = {}) {
-  const { text } = await callClaude({
+  const { text, stopReason } = await callClaude({
     system: GATE_SYSTEM,
     user: JSON.stringify({ raw_text: rawText, current_time: now, user_timezone: timezone }),
   });
-  return parseJson(text);
+  return parseJson(text, { label: 'gate', stopReason });
 }
 
 const RESOLVER_SYSTEM = `You settle a market that was already defined. You are NOT judging whether the
@@ -177,14 +190,14 @@ Always cite what you actually found. Return ONLY JSON, no fences:
 {"outcome":"YES|NO|VOID","evidence":"","source_checked":"","void_reason":null}`;
 
 export async function resolve(market, { now = new Date().toISOString() } = {}) {
-  const { text } = await callClaude({
+  const { text, stopReason } = await callClaude({
     system: RESOLVER_SYSTEM,
     user: JSON.stringify({ market, current_time: now }),
     tools: [{ type: 'web_search_20250305', name: 'web_search' }],
     maxTokens: 2000,
   });
 
-  const out = parseJson(text);
+  const out = parseJson(text, { label: 'resolve', stopReason });
 
   // Anything that isn't one of the three verdicts is treated as VOID and flagged.
   if (!['YES', 'NO', 'VOID'].includes(out.outcome)) {

@@ -8,7 +8,13 @@ let lastBody = null;
 globalThis.fetch = async (url, opts) => {
   lastBody = JSON.parse(opts.body);
   if (globalThis.__fail) return { ok: false, status: 529, text: async () => 'overloaded' };
-  return { ok: true, status: 200, json: async () => ({ content: [{ type: 'text', text: globalThis.__next }] }) };
+  return {
+    ok: true, status: 200,
+    json: async () => ({
+      content: [{ type: 'text', text: globalThis.__next }],
+      stop_reason: globalThis.__stopReason ?? 'end_turn',
+    }),
+  };
 };
 
 const { gate, resolve } = await import('../src/core/terminal.js');
@@ -53,6 +59,36 @@ globalThis.__next = '```json\n{"status":"rejected","reason":"\\"Pump\\" has no f
 r = await gate('will btc pump');
 is(r.status === 'rejected', 'gate: parses a rejection wrapped in code fences');
 is(!!r.suggested_fix, 'gate: rejection carries a one-tap fix');
+
+// A malformed or truncated response used to fail completely silently — a
+// production incident with zero server-side trace of what the model actually
+// sent back. It's now logged, and the error tells the two failure modes apart.
+{
+  const errLog = [];
+  const origErr = console.error;
+  console.error = (...a) => errLog.push(a.join(' '));
+
+  globalThis.__stopReason = 'end_turn';
+  globalThis.__next = 'Sorry, I cannot help with that request.';
+  let threw = null;
+  try { await gate('anything'); } catch (e) { threw = e; }
+  is(threw?.message.includes('no parseable JSON'),
+     'gate: a response with no JSON at all is reported as exactly that');
+  is(errLog.some(l => l.includes('[terminal] gate') && l.includes('Sorry, I cannot help')),
+     'gate: the raw response is logged server-side, not silently dropped');
+
+  errLog.length = 0;
+  globalThis.__stopReason = 'max_tokens';
+  globalThis.__next = '{"status":"approved","question":"Will BTC clo';  // cut off mid-object
+  threw = null;
+  try { await gate('will btc pump'); } catch (e) { threw = e; }
+  is(threw?.message.includes('cut off before finishing'),
+     'gate: a response truncated by max_tokens is distinguished from a genuinely bad one');
+  is(errLog.some(l => l.includes('max_tokens')), 'gate: and that distinction is logged too');
+
+  globalThis.__stopReason = 'end_turn';
+  console.error = origErr;
+}
 
 globalThis.__next = 'Here you go:\n{"outcome":"NO","evidence":"CoinGecko close was $118,402.","source_checked":"coingecko.com","void_reason":null}';
 r = await resolve({ id: 1, question: 'q', source_name: 'CoinGecko' });
